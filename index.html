@@ -1,0 +1,1301 @@
+<meta charset="utf-8">
+<title>RDMA 底层手册</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@600;700&display=swap">
+
+<style>
+/* ------------------------------------------------------------------
+   设计计划
+   色彩：冷灰纸面 + 墨蓝；钴蓝标"本端"，琥珀标"对端"，语义色只给结果。
+   字体：Archivo / Noto Serif SC 标题，IBM Plex Sans / Noto Sans SC 正文，
+        IBM Plex Mono 承担一切数字、字段名与代码。
+   布局：手册式纵向模块，页头粘附 + 目录浮层；交互件统一为"仪表盘"卡片。
+------------------------------------------------------------------ */
+*{box-sizing:border-box}
+:root{
+  --bg:#EEF1F3; --surface:#FFFFFF; --surface-2:#E5EAED; --surface-3:#D8E0E5;
+  --ink:#0F1720; --ink-2:#4B5A66; --ink-3:#75838F;
+  --line:#CBD5DB; --line-2:#9EAEB8;
+  --a:#2447C4; --a-soft:#DDE3FA; --a-ink:#1B37A0; --on-a:#FFFFFF;
+  --b:#8A5300; --b-soft:#F5E6CB;
+  --ok:#1B6E45; --ok-soft:#D8EDE2;
+  --bad:#A62B22; --bad-soft:#F7DDDA;
+  --code-bg:#0E1620; --code-fg:#CFDDE8;
+  --f-display:'Archivo','Noto Serif SC',ui-serif,Georgia,serif;
+  --f-body:'IBM Plex Sans','Noto Sans SC',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --f-mono:'IBM Plex Mono','Noto Sans SC',ui-monospace,SFMono-Regular,Menlo,monospace;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0B1117; --surface:#111A22; --surface-2:#16212B; --surface-3:#1D2A35;
+    --ink:#E4EBF0; --ink-2:#9DADB9; --ink-3:#7B8B98;
+    --line:#24323D; --line-2:#3A4B58;
+    --a:#8AA3FF; --a-soft:#1B2952; --a-ink:#B4C5FF; --on-a:#0B1117;
+    --b:#E2A44E; --b-soft:#37280F;
+    --ok:#63C795; --ok-soft:#13301F;
+    --bad:#FF8A7C; --bad-soft:#391A17;
+    --code-bg:#060A0E; --code-fg:#C6D5E2;
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0B1117; --surface:#111A22; --surface-2:#16212B; --surface-3:#1D2A35;
+  --ink:#E4EBF0; --ink-2:#9DADB9; --ink-3:#7B8B98;
+  --line:#24323D; --line-2:#3A4B58;
+  --a:#8AA3FF; --a-soft:#1B2952; --a-ink:#B4C5FF; --on-a:#0B1117;
+  --b:#E2A44E; --b-soft:#37280F;
+  --ok:#63C795; --ok-soft:#13301F;
+  --bad:#FF8A7C; --bad-soft:#391A17;
+  --code-bg:#060A0E; --code-fg:#C6D5E2;
+  color-scheme:dark;
+}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  margin:0;background:var(--bg);color:var(--ink);
+  font-family:var(--f-body);font-size:16px;line-height:1.78;
+  -webkit-font-smoothing:antialiased;
+}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:35;background:var(--bg)}
+h1,h2,h3,h4{font-family:var(--f-display);font-weight:700;line-height:1.28;letter-spacing:-.012em;margin:0;text-wrap:balance}
+p{margin:0}
+a{color:var(--a);text-underline-offset:3px}
+.mono{font-family:var(--f-mono);font-variant-numeric:tabular-nums}
+.wrap{
+  max-width:1120px;margin:0 auto;
+  padding-left:max(16px,env(safe-area-inset-left,0px));
+  padding-right:max(16px,env(safe-area-inset-right,0px));
+}
+.scrollx{overflow-x:auto;-webkit-overflow-scrolling:touch}
+
+/* ---------- 页头 ---------- */
+.hdr{
+  position:sticky;top:env(safe-area-inset-top,0px);z-index:30;
+  border-bottom:1px solid var(--line);
+  background:var(--bg);
+  background:color-mix(in srgb,var(--bg) 86%,transparent);
+  backdrop-filter:blur(10px);
+}
+.hdr-in{display:flex;align-items:center;gap:16px;height:56px}
+.brand{display:inline-flex;align-items:center;gap:9px;color:var(--ink);text-decoration:none;font-family:var(--f-display);font-weight:700;font-size:15px;letter-spacing:.01em}
+.brand svg{flex:none}
+.brand span b{font-family:var(--f-mono);font-weight:500;color:var(--ink-3);margin-left:6px;font-size:12px}
+.hdr-sp{flex:1}
+.toc-btn{
+  display:inline-flex;align-items:center;gap:8px;font:inherit;font-size:13px;
+  padding:6px 12px;border-radius:8px;border:1px solid var(--line-2);
+  background:transparent;color:var(--ink);cursor:pointer;
+}
+.toc-btn:hover{border-color:var(--a);color:var(--a)}
+.toc-btn:focus-visible,.btn:focus-visible,.chip:focus-visible,.fsm-node:focus-visible,.tab:focus-visible,.pseg:focus-visible,.bit:focus-visible,.jrow:focus-visible{outline:2px solid var(--a);outline-offset:2px}
+.progress{position:absolute;left:0;right:0;bottom:-1px;height:2px;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--a)}
+.toc{
+  border-bottom:1px solid var(--line);background:var(--surface);
+  box-shadow:0 12px 30px -18px rgba(0,0,0,.35);
+}
+.toc-in{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px 18px;padding-block:14px 16px}
+.toc-in a{
+  display:flex;gap:10px;padding:5px 0;text-decoration:none;color:var(--ink-2);font-size:13.5px;
+  border-bottom:1px solid transparent;
+}
+.toc-in a:hover{color:var(--a)}
+.toc-in a b{font-family:var(--f-mono);font-weight:500;color:var(--ink-3);font-size:12px;flex:none;width:22px}
+
+/* ---------- 首屏 ---------- */
+.hero{padding-block:44px 40px;border-bottom:1px solid var(--line)}
+.eyebrow{
+  font-family:var(--f-mono);font-size:11.5px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--ink-3);display:block;margin-bottom:14px;
+}
+.hero h1{font-size:clamp(30px,5.2vw,52px);letter-spacing:-.025em;line-height:1.16}
+.hero h1 em{font-style:normal;color:var(--a)}
+.lede{font-size:17px;color:var(--ink-2);max-width:64ch;margin-top:18px}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin-top:32px;background:var(--line);border:1px solid var(--line)}
+.stat{background:var(--surface);padding:16px 18px}
+.stat b{display:block;font-family:var(--f-mono);font-weight:500;font-size:clamp(20px,3.2vw,27px);letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.stat span{display:block;font-size:12.5px;color:var(--ink-2);margin-top:3px;line-height:1.5}
+.ribbon{display:flex;margin-top:30px;border:1px solid var(--line);border-radius:4px;overflow:hidden;min-height:46px}
+.rb{display:flex;flex-direction:column;justify-content:center;gap:1px;padding:6px 6px;min-width:0;border-right:1px solid var(--bg);background:var(--surface-2)}
+.rb:last-child{border-right:0}
+.rb span{font-family:var(--f-mono);font-size:10.5px;line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rb b{font-family:var(--f-mono);font-weight:400;font-size:9.5px;color:var(--ink-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rb.h{background:var(--a-soft)}
+.rb.h span{color:var(--a-ink)}
+.rb.p{background:var(--surface-3)}
+.cap{font-size:12.5px;color:var(--ink-3);margin-top:9px;line-height:1.6}
+
+/* ---------- 章节 ---------- */
+.sec{padding-block:clamp(46px,6vw,72px);border-bottom:1px solid var(--line)}
+.sec.alt{background:var(--surface)}
+.sec-head{max-width:70ch;margin-bottom:30px}
+.sec-head h2{font-size:clamp(23px,3.4vw,32px);margin-bottom:12px}
+.sec-head .lede{font-size:16px;margin-top:0}
+h3{font-size:clamp(17px,2.2vw,20px);margin-top:34px;margin-bottom:10px}
+.prose{max-width:70ch;display:flex;flex-direction:column;gap:14px;color:var(--ink-2)}
+.prose strong{color:var(--ink);font-weight:600}
+.prose code{font-family:var(--f-mono);font-size:.9em;background:var(--surface-2);padding:1px 5px;border-radius:4px;color:var(--ink)}
+.sec.alt .prose code{background:var(--surface-2)}
+
+/* ---------- 仪表盘卡片 ---------- */
+.inst{background:var(--surface);border:1px solid var(--line);border-radius:10px;padding:20px;margin-top:22px}
+.sec.alt .inst{background:var(--bg)}
+.inst-head{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:baseline;justify-content:space-between;margin-bottom:16px}
+.inst-t{font-family:var(--f-mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-3)}
+.inst-note{font-size:12.5px;color:var(--ink-3)}
+
+/* 控件 */
+.btn{
+  font:inherit;font-size:13.5px;line-height:1.2;padding:7px 13px;border-radius:7px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink);cursor:pointer;
+  transition:background .15s,border-color .15s,color .15s;
+}
+.btn:hover{border-color:var(--a);color:var(--a)}
+.btn[aria-pressed="true"],.btn.on{background:var(--a);border-color:var(--a);color:var(--on-a)}
+.btn.ghost{background:transparent}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px}
+.tab{font:inherit;font-family:var(--f-mono);font-size:12.5px;padding:6px 12px;border-radius:6px;border:1px solid transparent;background:transparent;color:var(--ink-2);cursor:pointer;border-bottom:2px solid transparent}
+.tab[aria-selected="true"]{color:var(--a);border-bottom-color:var(--a);background:var(--a-soft)}
+.tab:hover{color:var(--a)}
+.tabs{display:flex;gap:4px;flex-wrap:wrap;border-bottom:1px solid var(--line);margin-bottom:18px;padding-bottom:2px}
+
+.pill{
+  display:inline-flex;align-items:center;gap:5px;font-family:var(--f-mono);font-size:11px;
+  padding:1px 8px;border-radius:999px;border:1px solid var(--line);color:var(--ink-2);
+  background:var(--surface-2);white-space:nowrap;
+}
+.pill.a{background:var(--a-soft);color:var(--a-ink);border-color:transparent}
+.pill.b{background:var(--b-soft);color:var(--b);border-color:transparent}
+.pill.ok{background:var(--ok-soft);color:var(--ok);border-color:transparent}
+.pill.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
+
+/* 表格 */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:9px;margin-top:16px;background:var(--surface)}
+.sec.alt .tbl-wrap{background:var(--bg)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;line-height:1.6}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+th{font-family:var(--f-mono);font-weight:500;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3);background:var(--surface-2);white-space:nowrap}
+.sec.alt th{background:var(--surface-2)}
+td.num,th.num{font-family:var(--f-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tbody tr[data-click]{cursor:pointer}
+tbody tr[data-click]:hover td{background:var(--a-soft)}
+tbody tr[data-click][aria-selected="true"] td{background:var(--a-soft)}
+tbody tr[data-click][aria-selected="true"] td:first-child{box-shadow:inset 3px 0 0 var(--a)}
+
+/* 01 旅程 */
+.journey{display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.jrow{display:grid;grid-template-columns:30px minmax(0,1fr) auto;gap:12px;align-items:start;padding:10px 12px;background:var(--surface);border:0;text-align:left;font:inherit;color:inherit;cursor:default;width:100%}
+.sec.alt .jrow{background:var(--bg)}
+.jrow .n{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);padding-top:3px}
+.jrow .t{font-size:14px;color:var(--ink-2)}
+.jrow .t b{color:var(--ink);font-weight:600}
+.jrow .tags{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}
+.jrow.act{background:var(--a-soft)}
+.jrow.act .t,.jrow.act .n{color:var(--a-ink)}
+.cmp{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:18px}
+.cmp>div{border:1px solid var(--line);border-radius:9px;padding:12px 14px;background:var(--surface-2)}
+.sec.alt .cmp>div{background:var(--surface)}
+.cmp h4{font-size:14px;margin-bottom:6px}
+.cmp p{font-size:13px;color:var(--ink-2);line-height:1.7}
+
+/* 02 对象 */
+.obj-grid{display:grid;grid-template-columns:minmax(0,1.05fr) minmax(0,1fr);gap:20px;align-items:start}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{
+  font:inherit;font-family:var(--f-mono);font-size:13px;padding:8px 12px;border-radius:7px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink);cursor:pointer;
+  transition:background .15s,color .15s,border-color .15s;
+}
+.chip:hover{border-color:var(--a);color:var(--a)}
+.chip[aria-pressed="true"]{background:var(--a);border-color:var(--a);color:var(--on-a)}
+.obj-panel{border-left:2px solid var(--a);padding-left:16px;min-height:190px}
+.obj-panel h4{font-size:17px;margin-bottom:4px}
+.obj-panel .sub{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);letter-spacing:.04em;margin-bottom:10px}
+.obj-panel p{font-size:14px;color:var(--ink-2);line-height:1.72}
+.kv{display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:13px}
+.kv div{display:grid;grid-template-columns:96px minmax(0,1fr);gap:10px}
+.kv dt,.kv .k{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);padding-top:2px}
+.kv .v{color:var(--ink-2)}
+.note{font-size:13px;color:var(--ink-2);background:var(--surface-2);border-radius:7px;padding:9px 12px;margin-top:12px;line-height:1.65}
+.note b{color:var(--ink)}
+
+/* 03 权限 */
+.flags{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-bottom:16px}
+.flag{display:flex;gap:9px;align-items:flex-start;padding:9px 11px;border:1px solid var(--line);border-radius:7px;background:var(--surface);cursor:pointer;font-size:13px;line-height:1.5}
+.sec.alt .flag{background:var(--bg)}
+.flag input{margin:3px 0 0;accent-color:var(--a);flex:none}
+.flag code{font-family:var(--f-mono);font-size:11.5px;display:block;color:var(--ink-3);margin-top:2px}
+.flag:hover{border-color:var(--line-2)}
+.result{margin-top:14px;padding:12px 14px;border-radius:8px;font-size:13.5px;line-height:1.65;border:1px solid var(--line);background:var(--surface-2);min-height:60px}
+.sec.alt .result{background:var(--surface)}
+.result.ok{border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
+.result.bad{border-color:var(--bad);background:var(--bad-soft);color:var(--bad)}
+.result b{display:block;font-family:var(--f-mono);font-size:12px;letter-spacing:.04em;margin-bottom:3px}
+
+/* 04 状态机 */
+.fsm{display:flex;align-items:stretch;gap:0;flex-wrap:wrap;margin-bottom:6px}
+.fsm-step{display:flex;align-items:center;gap:0;flex:1 1 150px;min-width:0}
+.fsm-node{
+  flex:1 1 auto;min-width:0;text-align:left;font:inherit;padding:11px 13px;border-radius:8px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink);cursor:pointer;
+  transition:border-color .15s,background .15s;
+}
+.sec.alt .fsm-node{background:var(--bg)}
+.fsm-node b{display:block;font-family:var(--f-mono);font-size:13.5px;letter-spacing:.02em}
+.fsm-node span{display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px;line-height:1.4}
+.fsm-node:hover{border-color:var(--a)}
+.fsm-node[aria-pressed="true"]{border-color:var(--a);background:var(--a-soft)}
+.fsm-node[aria-pressed="true"] b{color:var(--a-ink)}
+.fsm-node.err{border-style:dashed}
+.fsm-arrow{flex:none;width:34px;text-align:center;color:var(--ink-3);font-family:var(--f-mono);font-size:15px;align-self:center}
+.fsm-panel{margin-top:18px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}
+.fsm-panel>div{min-width:0}
+.fsm-panel h4{font-size:14px;margin-bottom:6px;font-family:var(--f-mono);font-weight:500;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.plist{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:5px;font-size:13.5px;color:var(--ink-2)}
+.plist li{display:flex;gap:8px;line-height:1.6}
+.plist li::before{content:"";flex:none;width:5px;height:5px;margin-top:9px;background:var(--a);border-radius:1px}
+.plist li.bad::before{background:var(--bad)}
+.plist code{font-family:var(--f-mono);font-size:12px;color:var(--ink);background:var(--surface-2);padding:0 4px;border-radius:3px}
+
+/* 06 流水线 */
+.pipe{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 16px}
+.stage{
+  flex:1 1 110px;min-width:0;border:1px solid var(--line);border-radius:7px;padding:8px 10px;
+  background:var(--surface-2);font-size:12px;line-height:1.4;transition:background .2s,border-color .2s;
+}
+.sec.alt .stage{background:var(--surface)}
+.stage b{display:block;font-family:var(--f-mono);font-size:11.5px;font-weight:500;letter-spacing:.02em}
+.stage span{display:block;color:var(--ink-3);font-size:11px;margin-top:2px}
+.stage.on{background:var(--a);border-color:var(--a);color:var(--on-a)}
+.stage.on span{color:var(--on-a);opacity:.78}
+.stage.dim{opacity:.42}
+.steps{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);padding-top:12px}
+.step{display:grid;grid-template-columns:26px minmax(0,1fr);gap:10px;padding:7px 8px;border-radius:6px;font-size:13.5px;line-height:1.6;color:var(--ink-2);transition:background .15s}
+.step .sn{font-family:var(--f-mono);font-size:11.5px;color:var(--ink-3);padding-top:2px}
+.step.act{background:var(--a-soft);color:var(--ink)}
+.step.act .sn{color:var(--a-ink)}
+.step code{font-family:var(--f-mono);font-size:12px;color:var(--ink);background:var(--surface-2);padding:0 4px;border-radius:3px}
+
+/* 07 时序图 */
+.ladder{min-width:440px}
+.ld-lane{stroke:var(--line-2);stroke-width:1;stroke-dasharray:3 4}
+.ld-lane-t{font-family:var(--f-mono);font-size:12px;fill:var(--ink-2)}
+.ld-line{stroke-width:1.6}
+.ld-req{stroke:var(--a)}
+.ld-resp{stroke:var(--b)}
+.ld-ack{stroke:var(--ink-3);stroke-dasharray:4 4;stroke-width:1.2}
+.ld-t{font-family:var(--f-mono);font-size:11.5px;fill:var(--ink)}
+.ld-s{font-family:var(--f-mono);font-size:10.5px;fill:var(--ink-3)}
+.ld-head-req{fill:var(--a)}
+.ld-head-resp{fill:var(--b)}
+.ld-head-ack{fill:var(--ink-3)}
+.op-note{font-size:13px;color:var(--ink-2);line-height:1.7;margin-top:12px;max-width:70ch}
+.op-note b{color:var(--ink)}
+
+/* 08 报文 */
+.pseg-row{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+.pseg{
+  font:inherit;font-family:var(--f-mono);font-size:12px;padding:8px 11px;border-radius:6px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink);cursor:pointer;
+}
+.sec.alt .pseg{background:var(--bg)}
+.pseg:hover{border-color:var(--a)}
+.pseg[aria-pressed="true"]{background:var(--a);border-color:var(--a);color:var(--on-a)}
+.pseg small{display:block;font-size:10px;opacity:.72;margin-top:1px}
+.bits{display:flex;flex-direction:column;gap:3px;min-width:540px}
+.bitrow{display:flex;gap:3px}
+.bit{
+  font:inherit;font-family:var(--f-mono);font-size:11px;text-align:center;padding:7px 3px;min-width:0;
+  border:1px solid var(--line);border-radius:4px;background:var(--surface-2);color:var(--ink);cursor:pointer;
+  overflow:hidden;white-space:nowrap;
+}
+.sec.alt .bit{background:var(--surface)}
+.bit b{display:block;font-weight:500;font-size:11.5px;overflow:hidden;text-overflow:ellipsis}
+.bit span{display:block;font-size:9.5px;color:var(--ink-3);overflow:hidden;text-overflow:ellipsis}
+.bit:hover{border-color:var(--a)}
+.bit[aria-pressed="true"]{background:var(--a);border-color:var(--a);color:var(--on-a)}
+.bit[aria-pressed="true"] span{color:var(--on-a);opacity:.8}
+.bit.res{opacity:.42}
+
+/* 09 lab */
+.lab{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px}
+.field{display:flex;flex-direction:column;gap:5px}
+.field label{font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink-3)}
+.field input,.field select{
+  font:inherit;font-family:var(--f-mono);font-size:14px;padding:7px 9px;border-radius:6px;
+  border:1px solid var(--line-2);background:var(--surface);color:var(--ink);width:100%;
+}
+.field input:focus,.field select:focus{outline:2px solid var(--a);outline-offset:-1px}
+.sec.alt .field input,.sec.alt .field select{background:var(--bg)}
+.out{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:8px;overflow:hidden;margin-top:16px}
+.out div{background:var(--surface);padding:11px 13px}
+.sec.alt .out div{background:var(--bg)}
+.out b{display:block;font-family:var(--f-mono);font-weight:500;font-size:19px;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+.out span{display:block;font-size:11.5px;color:var(--ink-3);margin-top:2px}
+.pkts{display:flex;flex-wrap:wrap;gap:4px;margin-top:14px;font-family:var(--f-mono);font-size:10.5px}
+.pk{padding:5px 7px;border-radius:4px;border:1px solid var(--line);background:var(--surface-2);color:var(--ink-2);white-space:nowrap}
+.sec.alt .pk{background:var(--surface)}
+.pk.f{border-color:var(--a);background:var(--a-soft);color:var(--a-ink)}
+.pk.l{border-color:var(--b);background:var(--b-soft);color:var(--b)}
+.pk.ellipsis{border-style:dashed}
+
+/* 10 可靠性 */
+.frames{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.fr{
+  font-family:var(--f-mono);font-size:11.5px;padding:7px 9px;border-radius:5px;min-width:52px;text-align:center;
+  border:1px solid var(--line);background:var(--surface-2);color:var(--ink-3);transition:all .2s;
+}
+.sec.alt .fr{background:var(--surface)}
+.fr b{display:block;font-weight:500;font-size:11.5px;color:inherit}
+.fr i{display:block;font-style:normal;font-size:9.5px;opacity:.8}
+.fr.ok{border-color:var(--ok);background:var(--ok-soft);color:var(--ok)}
+.fr.drop{border-color:var(--bad);background:var(--bad-soft);color:var(--bad);text-decoration:line-through}
+.fr.retx{border-color:var(--b);background:var(--b-soft);color:var(--b)}
+.log{font-family:var(--f-mono);font-size:12.5px;line-height:1.75;background:var(--surface-2);border-radius:7px;padding:10px 12px;min-height:76px;color:var(--ink-2);display:flex;flex-direction:column;gap:3px}
+.sec.alt .log{background:var(--surface)}
+.log span{display:block}
+.log span:last-child{color:var(--ink)}
+.log em{font-style:normal;color:var(--b)}
+
+/* 11 ECN */
+.gauge{height:26px;border-radius:5px;background:var(--surface-2);border:1px solid var(--line);position:relative;overflow:hidden;margin:14px 0 6px}
+.gauge .fill{position:absolute;inset:0 auto 0 0;width:0;background:var(--a);opacity:.35;transition:width .12s linear,background .2s}
+.gauge .zones{position:absolute;inset:0;display:flex}
+.gauge .zones i{height:100%;border-right:1px dashed var(--line-2)}
+.gauge .zones i:last-child{border-right:0}
+.glegend{display:flex;justify-content:space-between;font-family:var(--f-mono);font-size:10.5px;color:var(--ink-3)}
+input[type=range]{width:100%;accent-color:var(--a);margin:8px 0}
+.verdict{font-family:var(--f-mono);font-size:12.5px;line-height:1.7;margin-top:10px;padding:10px 12px;border-radius:7px;border:1px solid var(--line);background:var(--surface-2)}
+.sec.alt .verdict{background:var(--surface)}
+.verdict strong{display:block;font-size:12px;letter-spacing:.04em;margin-bottom:3px}
+.switch{display:inline-flex;align-items:center;gap:8px;font-size:13.5px;color:var(--ink-2);cursor:pointer}
+
+/* 12/13 代码 */
+pre.code{
+  background:var(--code-bg);color:var(--code-fg);padding:16px 18px;border-radius:9px;overflow-x:auto;
+  font-family:var(--f-mono);font-size:12.8px;line-height:1.7;margin:0;tab-size:2;
+}
+.code-tabs .panel{display:none}
+.code-tabs .panel.on{display:block}
+
+/* 14 术语 */
+.gloss{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:2px 22px;margin-top:16px}
+.gterm{padding:9px 0;border-bottom:1px solid var(--line);min-width:0}
+.gterm dt{font-family:var(--f-mono);font-size:12.5px;color:var(--ink);font-weight:500}
+.gterm dd{margin:2px 0 0;font-size:13px;color:var(--ink-2);line-height:1.6}
+.gsearch{max-width:340px}
+
+.cta{border:1px solid var(--line);border-radius:10px;padding:18px 20px;background:var(--surface);margin-top:26px}
+.sec.alt .cta{background:var(--bg)}
+.cta h3{margin-top:0}
+.cta ul{margin:0;padding-left:20px;font-size:13.5px;color:var(--ink-2);line-height:1.8}
+
+footer{padding-block:40px 56px;font-size:12.5px;color:var(--ink-3)}
+footer p{max-width:72ch;line-height:1.75}
+
+@media (max-width:820px){
+  .obj-grid{grid-template-columns:1fr}
+  .cmp{grid-template-columns:1fr}
+  .fsm-panel{grid-template-columns:1fr}
+  .toc-in{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:600px){
+  .stats{grid-template-columns:1fr}
+  .fsm{flex-direction:column;gap:0}
+  .fsm-step{flex-direction:column;align-items:stretch;flex:none;width:100%}
+  .fsm-arrow{width:auto;padding:2px 0;transform:none}
+  .fsm-arrow span{display:inline-block;transform:rotate(90deg)}
+  .rb b{display:none}
+  .jrow{grid-template-columns:24px minmax(0,1fr)}
+  .jrow .tags{grid-column:2;justify-content:flex-start}
+  .toc-in{grid-template-columns:1fr}
+  .ladder{min-width:380px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}
+}
+/* 关系图 */
+.dg-ctx{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:5 4}
+.dg-pd{fill:var(--a-soft);stroke:var(--line-2);stroke-width:1}
+.dg-box{fill:var(--surface);stroke:var(--line-2);stroke-width:1}
+.dg-box.dg-acc{stroke:var(--a);stroke-width:1.6}
+.dg-line{fill:none;stroke:var(--line-2);stroke-width:1.4;stroke-dasharray:4 3}
+.dg-lb{font-family:var(--f-mono);font-size:11px;fill:var(--ink-3);letter-spacing:.04em}
+.dg-lb2{font-family:var(--f-mono);font-size:11.5px;fill:var(--a-ink);letter-spacing:.06em}
+.dg-t{font-family:var(--f-mono);font-size:12px;fill:var(--ink)}
+.dg-s{font-family:var(--f-mono);font-size:10px;fill:var(--ink-3)}
+section[id]{scroll-margin-top:74px}
+
+/* 14 端到端 */
+.rb-lanes{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.15fr) minmax(0,1fr);gap:14px;align-items:start}
+.rb-lane,.rb-mid{border:1px solid var(--line);border-radius:9px;background:var(--surface-2);min-width:0}
+.sec.alt .rb-lane,.sec.alt .rb-mid{background:var(--surface)}
+.rb-lane-h{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-2);padding:9px 12px;border-bottom:1px solid var(--line);font-family:var(--f-mono);letter-spacing:.03em}
+.rb-lane-b{padding:12px;display:flex;flex-direction:column;gap:10px}
+.rb-p{font-size:12.5px;line-height:1.6;color:var(--ink-2)}
+.rb-p code{font-family:var(--f-mono);font-size:11.5px;background:var(--surface-3);padding:1px 4px;border-radius:3px}
+.rb-steps{margin:0;padding-left:16px;font-size:12px;line-height:1.65;color:var(--ink-3)}
+.rb-steps li{margin-bottom:2px}
+.rb-metric{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:11.5px;color:var(--ink-3);border-top:1px solid var(--line);padding-top:7px}
+.rb-metric b{font-weight:500;font-size:14px;color:var(--ink)}
+.rb-mid{padding-bottom:12px}
+.ring{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:12px 12px 8px}
+.slot{
+  border:1px solid var(--line);border-radius:6px;padding:7px 6px;min-width:0;
+  background:var(--surface);transition:background .22s,border-color .22s,transform .22s;
+}
+.sec.alt .slot{background:var(--bg)}
+.slot .si{font-family:var(--f-mono);font-size:10px;color:var(--ink-3);display:block;line-height:1.2}
+.slot .sd{font-family:var(--f-mono);font-size:10.5px;color:var(--ink-2);display:block;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;line-height:1.3}
+.slot.fill{border-color:var(--a);background:var(--a-soft)}
+.slot.fill .sd{color:var(--a-ink)}
+.slot.fill .si{color:var(--a-ink)}
+.slot.read{border-color:var(--ok);background:var(--ok-soft)}
+.slot.read .sd{color:var(--ok)}
+.slot.pulse{transform:scale(1.06)}
+.ring-meta{display:flex;gap:14px;flex-wrap:wrap;padding:0 12px;font-size:11.5px;color:var(--ink-3);font-family:var(--f-mono)}
+.ring-meta b{color:var(--ink);font-weight:500}
+.rb-legend{display:flex;gap:12px;flex-wrap:wrap;padding:8px 12px 0;font-size:11px;color:var(--ink-3)}
+.rb-legend span{display:inline-flex;align-items:center;gap:5px}
+.lg{width:9px;height:9px;border-radius:2px;border:1px solid var(--line-2);display:inline-block}
+.lg-empty{background:var(--surface)}
+.lg-fill{background:var(--a-soft);border-color:var(--a)}
+.lg-read{background:var(--ok-soft);border-color:var(--ok)}
+.cq{display:flex;flex-direction:column;gap:4px;min-height:64px;border:1px dashed var(--line-2);border-radius:6px;padding:7px 8px;background:var(--surface)}
+.sec.alt .cq{background:var(--bg)}
+.cq-empty{font-family:var(--f-mono);font-size:11px;color:var(--ink-3);margin:auto}
+.cqe{
+  font-family:var(--f-mono);font-size:10.5px;line-height:1.45;color:var(--ink);
+  border-left:2px solid var(--b);padding:2px 0 2px 6px;background:var(--b-soft);border-radius:0 3px 3px 0;
+}
+.cqe b{color:var(--b);font-weight:500}
+.rb-log{max-height:150px;overflow-y:auto}
+@media (max-width:900px){
+  .rb-lanes{grid-template-columns:1fr}
+}
+</style>
+
+<header class="hdr">
+  <div class="wrap hdr-in">
+    <a class="brand" href="#top">
+      <svg width="19" height="19" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6">
+        <rect x="1.5" y="7" width="6" height="10" rx="1.2"/><rect x="16.5" y="7" width="6" height="10" rx="1.2"/>
+        <path d="M7.5 12h9"/><path d="M13.6 9.4 16.5 12l-2.9 2.6"/>
+      </svg>
+      <span>RDMA 底层手册<b>v1</b></span>
+    </a>
+    <div class="hdr-sp"></div>
+    <button class="toc-btn" id="tocBtn" aria-expanded="false" aria-controls="toc">
+      <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 4h12M2 8h12M2 12h12"/></svg>
+      目录
+    </button>
+  </div>
+  <div class="progress" aria-hidden="true"><i id="prog"></i></div>
+  <nav class="toc" id="toc" hidden aria-label="章节目录">
+    <div class="wrap toc-in">
+      <a href="#m01"><b>01</b>为什么是 RDMA</a>
+      <a href="#m02"><b>02</b>对象模型</a>
+      <a href="#m03"><b>03</b>内存注册与 key</a>
+      <a href="#m04"><b>04</b>QP 状态机</a>
+      <a href="#m05"><b>05</b>传输类型</a>
+      <a href="#m06"><b>06</b>一次 post_send 的旅程</a>
+      <a href="#m07"><b>07</b>四种操作语义</a>
+      <a href="#m08"><b>08</b>报文解剖</a>
+      <a href="#m09"><b>09</b>分片与 PMTU</a>
+      <a href="#m10"><b>10</b>可靠性与重传</a>
+      <a href="#m11"><b>11</b>拥塞控制与无损以太</a>
+      <a href="#m12"><b>12</b>性能心智模型</a>
+      <a href="#m13"><b>13</b>verbs 编程骨架</a>
+      <a href="#m14"><b>14</b>端到端 ring buffer</a>
+      <a href="#m15"><b>15</b>术语与动手实验</a>
+    </div>
+  </nav>
+</header>
+
+<main id="top">
+
+<section class="hero">
+  <div class="wrap">
+    <span class="eyebrow">InfiniBand / RoCEv2 · 传输层</span>
+    <h1>一次 RDMA 写入，<br>网络里<em>到底</em>发生了什么</h1>
+    <p class="lede">
+      把 RDMA 拆到最底层：保护域与内存键如何授权一次远端写入，队列对怎样一步步进入可发送状态，
+      一个 WQE 如何变成 RoCEv2 报文，丢包之后由谁重传。每一节都能动手操作。
+    </p>
+
+    <div class="stats">
+      <div class="stat"><b>~1 µs</b><span>小消息单跳延迟量级，比内核 TCP 少一个数量级</span></div>
+      <div class="stat"><b>0 次拷贝</b><span>数据路径上应用内存与网卡之间直接 DMA</span></div>
+      <div class="stat"><b>24 bit</b><span>QPN 与 PSN 的位宽，决定了并发连接与乱序窗口的边界</span></div>
+    </div>
+
+    <div class="ribbon" role="img" aria-label="RoCEv2 帧结构：以太头 14 字节，IPv4 20 字节，UDP 8 字节，BTH 12 字节，RETH 16 字节，负载，ICRC 4 字节，FCS 4 字节">
+      <div class="rb"><span>Eth</span><b>14 B</b></div>
+      <div class="rb"><span>IPv4</span><b>20 B</b></div>
+      <div class="rb"><span>UDP :4791</span><b>8 B</b></div>
+      <div class="rb h"><span>BTH</span><b>12 B</b></div>
+      <div class="rb h"><span>RETH</span><b>16 B</b></div>
+      <div class="rb p" style="flex:9"><span>Payload</span><b>0 – PMTU</b></div>
+      <div class="rb"><span>ICRC</span><b>4 B</b></div>
+      <div class="rb"><span>FCS</span><b>4 B</b></div>
+    </div>
+    <p class="cap">RoCEv2 帧。<b>头部已刻意放大</b>，实际 4 KB 负载时头部只占约 1.5%。行内所有数值以 IBTA 1.x 规范与 Linux rdma-core verbs 为准，性能数字为量级参考。</p>
+  </div>
+</section>
+
+<!-- ============ 01 ============ -->
+<section class="sec alt" id="m01">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 01 · 动机</span>
+      <h2>传统网络栈把 CPU 放在了数据路径正中间</h2>
+      <p class="lede">一次 4 KB 的 TCP 发送，数据要被内核复制、排队、加锁，再逐层封装；接收端反过来再走一遍。RDMA 把整个协议栈下沉进网卡，CPU 只负责下指令和收结果。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">两条路径 · 逐跳对比</span>
+        <div class="btnrow">
+          <button class="btn" id="jmTcp" aria-pressed="true">传统 TCP/IP</button>
+          <button class="btn" id="jmRdma" aria-pressed="false">RDMA</button>
+          <button class="btn ghost" id="jmPlay">播放</button>
+        </div>
+      </div>
+      <div class="journey" id="journey"></div>
+
+      <div class="cmp">
+        <div>
+          <h4>内核 TCP</h4>
+          <p>每次发送至少 1 次系统调用、2 次内存拷贝；接收端靠中断唤醒软中断，再唤醒进程。协议处理与数据搬运全部消耗 CPU 周期，且随带宽线性增长。</p>
+        </div>
+        <div>
+          <h4>RDMA</h4>
+          <p>应用在用户态写 WQE、敲一次 doorbell。网卡自己取数据、组包、重传、写对端内存。远端 CPU 在数据路径上完全不参与，小消息延迟进入微秒级。</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="prose" style="margin-top:26px">
+      <p>要理解后面所有细节，先记住三件事：<strong>控制路径</strong>（建连、注册内存、配置 QP）可以很慢、可以走内核；<strong>数据路径</strong>必须极快，所以它在用户态、由硬件执行；<strong>完成通知</strong>是异步的，网卡把结果写进队列，应用自己来取。</p>
+      <p>代价是另一套复杂度：内存必须先注册并 pin 住，连接是有状态的，错误处理要自己写，拥塞控制依赖网络配置。这份手册剩下的部分，就是在拆这些代价。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 02 ============ -->
+<section class="sec" id="m02">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 02 · 对象模型</span>
+      <h2>六个对象，一条铁律</h2>
+      <p class="lede">RDMA 的 API 是一组需要显式创建、显式销毁的对象。它们的从属关系决定了哪些操作能互相看见——点开每个对象看它在协议里对应什么。</p>
+    </div>
+
+    <div class="obj-grid">
+      <div>
+        <div class="chips" id="objChips"></div>
+        <div class="obj-panel" id="objPanel" aria-live="polite"></div>
+      </div>
+      <div class="inst" style="margin-top:0">
+        <div class="inst-head"><span class="inst-t">从属关系</span></div>
+        <div class="scrollx">
+          <svg viewBox="0 0 760 330" style="min-width:520px;width:100%;height:auto" role="img" aria-label="PD 包含 MR、QP、SRQ、AH；QP 的发送与接收队列关联到 CQ">
+            <rect x="12" y="12" width="430" height="306" rx="8" class="dg-ctx"/>
+            <text x="28" y="36" class="dg-lb">ibv_context · 设备上下文</text>
+            <rect x="32" y="52" width="250" height="246" rx="8" class="dg-pd"/>
+            <text x="48" y="76" class="dg-lb2">PD 保护域</text>
+            <rect x="50" y="90" width="214" height="52" rx="6" class="dg-box"/>
+            <text x="64" y="112" class="dg-t">MR 已注册内存</text>
+            <text x="64" y="130" class="dg-s">lkey / rkey / 访问权限</text>
+            <rect x="50" y="154" width="214" height="64" rx="6" class="dg-box dg-acc"/>
+            <text x="64" y="176" class="dg-t">QP 队列对 · QPN</text>
+            <text x="64" y="194" class="dg-s">Send Queue / Recv Queue</text>
+            <text x="64" y="210" class="dg-s">状态：RESET→INIT→RTR→RTS</text>
+            <rect x="50" y="230" width="102" height="50" rx="6" class="dg-box"/>
+            <text x="62" y="251" class="dg-t">SRQ</text>
+            <text x="62" y="267" class="dg-s">共享接收队列</text>
+            <rect x="162" y="230" width="102" height="50" rx="6" class="dg-box"/>
+            <text x="174" y="251" class="dg-t">AH</text>
+            <text x="174" y="267" class="dg-s">UD 目的地址</text>
+            <rect x="520" y="90" width="220" height="64" rx="6" class="dg-box"/>
+            <text x="536" y="112" class="dg-t">CQ 完成队列</text>
+            <text x="536" y="130" class="dg-s">CQE：状态 / wr_id / 长度</text>
+            <rect x="520" y="196" width="220" height="52" rx="6" class="dg-box"/>
+            <text x="536" y="218" class="dg-t">MW 内存窗口</text>
+            <text x="536" y="236" class="dg-s">在 MR 上再切一个 rkey</text>
+            <path d="M264 186 H420 V122 H520" class="dg-line"/>
+            <text x="300" y="112" class="dg-lb">send_cq / recv_cq</text>
+            <path d="M264 246 H420 V222 H520" class="dg-line"/>
+            <text x="300" y="262" class="dg-lb">MW 绑定在 MR 上</text>
+            <path d="M264 90 H420 V222" class="dg-line" opacity="0"/>
+          </svg>
+        </div>
+        <p class="inst-note" style="margin:10px 0 0">铁律：<b>QP 只能访问同一个 PD 里的 MR</b>。跨 PD 的 rkey 会被网卡判为访问错误（NAK 0x61）。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 03 ============ -->
+<section class="sec alt" id="m03">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 03 · 内存</span>
+      <h2>注册，是为了让网卡绕过 MMU</h2>
+      <p class="lede">网卡不懂页表。注册内存时，驱动把这批页 pin 住，把物理地址写进网卡自己的翻译表（MPT / MTT），并发给你两把钥匙：本地用的 lkey，和可以交给对端的 rkey。</p>
+    </div>
+
+    <div class="prose">
+      <p><strong>lkey</strong> 出现在你本地 WQE 的 scatter/gather 项里，告诉本端网卡“从这块内存读”或“写回这块内存”。<strong>rkey</strong> 随 RETH / AtomicETH 头一起发到对端，告诉对端网卡“允许你读写我哪一块内存”。权限在注册时一次性写进翻译表，之后每次远端访问都由网卡硬件比对。</p>
+      <p>注册的代价与页数成正比：一次 <code>ibv_reg_mr</code> 可能要 pin 上万页。所以热路径上反复注册/注销内存是常见的性能杀手，正确做法是启动时注册、长期复用，或用内存窗口与按需分页（ODP）。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">实验 · 用访问标志决定远端能做什么</span>
+        <span class="inst-note">对应 ibv_reg_mr 的 access 参数</span>
+      </div>
+      <div class="flags" id="flags"></div>
+      <div class="btnrow" id="opBtns">
+        <button class="btn" data-op="read">远端 RDMA READ</button>
+        <button class="btn" data-op="write">远端 RDMA WRITE</button>
+        <button class="btn" data-op="atomic">远端 ATOMIC</button>
+        <button class="btn" data-op="send">本地 SEND（读本端内存）</button>
+      </div>
+      <div class="result" id="flagResult" aria-live="polite">选择权限后点一个操作，看网卡会不会放行。</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 04 ============ -->
+<section class="sec" id="m04">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 04 · 连接状态</span>
+      <h2>QP 状态机：四个状态，一次都跳不过去</h2>
+      <p class="lede">新建的 QP 什么都不能做。它必须按 RESET → INIT → RTR → RTS 逐步迁移，每一步只允许设置一组特定的属性；跳步或漏设属性，<code>ibv_modify_qp</code> 直接返回 EINVAL。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">状态机 · 点击任一状态</span>
+        <span class="inst-note">ERROR 可从任意状态进入</span>
+      </div>
+      <div class="fsm" id="fsm">
+        <div class="fsm-step"><button class="fsm-node" data-state="RESET"><b>RESET</b><span>队列为空</span></button></div>
+        <div class="fsm-arrow">→</div>
+        <div class="fsm-step"><button class="fsm-node" data-state="INIT"><b>INIT</b><span>可投递接收</span></button></div>
+        <div class="fsm-arrow">→</div>
+        <div class="fsm-step"><button class="fsm-node" data-state="RTR"><b>RTR</b><span>可接收</span></button></div>
+        <div class="fsm-arrow">→</div>
+        <div class="fsm-step"><button class="fsm-node" data-state="RTS"><b>RTS</b><span>可收发</span></button></div>
+      </div>
+      <div class="fsm-panel">
+        <div>
+          <h4>这个状态能做什么</h4>
+          <ul class="plist" id="fsmOps"></ul>
+        </div>
+        <div>
+          <h4>迁移时必须设置的属性</h4>
+          <ul class="plist" id="fsmAttrs"></ul>
+        </div>
+      </div>
+      <div class="result" id="fsmPit" style="margin-top:14px"></div>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>两个最容易踩的点：<strong>必须在进入 RTR 之前 post 好 recv WR</strong>，否则第一个包到达时接收队列为空，对端会收到 RNR NAK，报文原地等一会儿再重试；<strong>两端的 <code>path_mtu</code> 与 PSN 起点必须一致</strong>，一边 4096 一边 1024，报文会被对端当成超长帧直接丢弃。</p>
+      <p>进入 RTS 之后，QP 才真正可用。此时属性里的 <code>timeout</code>、<code>retry_cnt</code>、<code>rnr_retry</code> 决定了它在不可靠网络里的韧性——默认值往往过于乐观。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 05 ============ -->
+<section class="sec alt" id="m05">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 05 · 服务类型</span>
+      <h2>选哪种 QP：可靠连接不是唯一答案</h2>
+      <p class="lede">传输服务决定了这个 QP 有没有连接、丢包会不会重传、支持哪些操作。选错的代价要么是内存开销爆炸，要么是数据静默丢失。</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>服务</th><th>连接模型</th><th>可靠性</th><th>支持的操作</th><th>典型用途</th></tr></thead>
+        <tbody id="trBody">
+          <tr data-click data-tr="RC"><td class="mono">RC</td><td>一对一</td><td><span class="pill ok">可靠有序</span></td><td>Send/Recv、Write、Read、Atomic、Write+Imm</td><td>存储、RPC、MPI、几乎一切</td></tr>
+          <tr data-click data-tr="UC"><td class="mono">UC</td><td>一对一</td><td><span class="pill b">不可靠</span></td><td>Send/Recv、Write（无 Read / Atomic）</td><td>特定 HPC 场景，少见</td></tr>
+          <tr data-click data-tr="UD"><td class="mono">UD</td><td>一对多，无连接</td><td><span class="pill b">不可靠</span></td><td>仅 Send/Recv，单包 ≤ PMTU</td><td>建连前的引导、多播、控制面</td></tr>
+          <tr data-click data-tr="RD"><td class="mono">RD</td><td>可靠数据报</td><td><span class="pill ok">可靠</span></td><td>同 RC</td><td>需 EEC，实际几乎被淘汰</td></tr>
+          <tr data-click data-tr="XRC"><td class="mono">XRC</td><td>共享接收队列</td><td><span class="pill ok">可靠</span></td><td>同 RC</td><td>接收侧 QP 数量成灾的多进程服务</td></tr>
+          <tr data-click data-tr="DC"><td class="mono">DC</td><td>动态连接</td><td><span class="pill ok">可靠</span></td><td>同 RC（+DCT 号寻址）</td><td>大规模 GPU 集群，硬件按需建连</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="result" id="trPanel" aria-live="polite" style="margin-top:14px"></div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>RC 的问题在于 <strong>QP 数量按平方增长</strong>：N 个节点、每节点 p 个进程要两两通信，就需要 N·p² 个 QP，每个 QP 都占网卡缓存与内存。UD 用一条 QP 发往任意目的（靠 DETH 头里的目的 QPN 寻址），代价是不保证送达、单个消息不能超过 PMTU，且接收端必须能从 GRH 里解析来源。</p>
+      <p>XRC 让多个进程共享一个接收 QP，DC 则把“建连”这件事交给硬件按需完成——发送时只写 DCT 号，不需要对端预先知道谁要来连。这两者都是为规模问题准备的补丁。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 06 ============ -->
+<section class="sec" id="m06">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 06 · 数据路径</span>
+      <h2>一次 post_send 的旅程</h2>
+      <p class="lede">从应用写下第一个字节，到 CQ 里出现 CQE，中间只有一次系统调用都没有——全是用户态写内存加一次 MMIO。逐步看这条流水线。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">流水线 · 点击步骤或播放</span>
+        <div class="btnrow">
+          <button class="btn ghost" id="stPrev">上一步</button>
+          <button class="btn" id="stPlay">播放</button>
+          <button class="btn ghost" id="stNext">下一步</button>
+        </div>
+      </div>
+      <div class="pipe" id="pipe"></div>
+      <div class="steps" id="steps"></div>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>第 2 步值得单独说：<strong>WQE 是写在你自己的内存里的</strong>，SQ 是应用与网卡共享的环形缓冲区，libibverbs 只是替你算好偏移量。所谓 doorbell，就是对网卡的一个映射到用户空间的寄存器做一次写，告诉它“环上有新条目了”。这就是 kernel bypass 的全部秘密：没有陷入内核，没有拷贝。</p>
+      <p>第 6 步是零拷贝的另一半：对端网卡拿着 BTH 里的 QPN 找到 QP 上下文，再用 RETH 里的 rkey 查翻译表，把数据直接 DMA 进你的缓冲区。整个过程中，对端操作系统和 CPU 都不知道这件事发生过。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 07 ============ -->
+<section class="sec alt" id="m07">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 07 · 操作语义</span>
+      <h2>四种操作，差在谁必须参与</h2>
+      <p class="lede">SEND 是对端 CPU 必须参与的双边操作；WRITE、READ、ATOMIC 是单边操作，对端只有网卡在工作。这张差别决定了你的程序要不要在对端跑线程。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">时序 · 选择操作</span>
+        <div class="tabs" role="tablist" id="opTabs">
+          <button class="tab" role="tab" data-op="send" aria-selected="true">SEND / RECV</button>
+          <button class="tab" role="tab" data-op="write" aria-selected="false">RDMA WRITE</button>
+          <button class="tab" role="tab" data-op="read" aria-selected="false">RDMA READ</button>
+          <button class="tab" role="tab" data-op="atomic" aria-selected="false">ATOMIC</button>
+        </div>
+      </div>
+      <div class="scrollx"><div class="ladder" id="ladder"></div></div>
+      <div class="op-note" id="opNote"></div>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>单边操作的诱惑很大——对端不需要 post_recv，不需要唤醒线程，延迟更低。但它要求请求方事先知道<strong>远端虚拟地址和 rkey</strong>，这通常要先用 SEND/RECV 交换一次元数据。所以真实系统里两者总是配合使用：控制面走 SEND，数据面走 WRITE/READ。</p>
+      <p>WRITE_WITH_IMM 是折中：数据单边写入，但会额外带一个 32 位立即数，在对端产生一条 <code>IBV_WC_RECV_RDMA_WITH_IMM</code> 完成事件——相当于“写完了，顺便敲一下门”。这是构建生产者/消费者队列最常用的原语。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 08 ============ -->
+<section class="sec" id="m08">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 08 · 报文</span>
+      <h2>线上到底长什么样</h2>
+      <p class="lede">RoCEv2 把 InfiniBand 的传输头整体塞进 UDP 里。路由靠 IP，寻址靠 BTH 里的 24 位 QPN，操作类型靠 8 位 opcode。点开每一段看细节。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">RoCEv2 帧 · 分段</span>
+        <span class="inst-note">UDP 目的端口固定 4791</span>
+      </div>
+      <div class="pseg-row" id="psegs"></div>
+      <div class="result" id="segPanel" aria-live="polite"></div>
+    </div>
+
+    <h3>BTH：12 个字节决定了报文去哪、是什么</h3>
+    <p class="prose" style="margin-top:8px">Base Transport Header 是所有 RDMA 报文的公共头。三个 32 位字，字段排布如下——点击任意字段。</p>
+
+    <div class="inst">
+      <div class="scrollx">
+        <div class="bits" id="bth"></div>
+      </div>
+      <div class="result" id="bitPanel" aria-live="polite" style="margin-top:14px"></div>
+    </div>
+
+    <h3>Opcode：高 3 位选服务，低 5 位选操作</h3>
+    <div class="prose" style="margin-top:8px">
+      <p>RC 的基址是 <code>0x00</code>，UC 是 <code>0x20</code>，RD 是 <code>0x40</code>，UD 是 <code>0x60</code>。同一个操作的 First/Middle/Last/Only 是相邻的几个码点——所以解析器只要看 <code>opcode &gt;&gt; 5</code> 就知道该用哪种传输服务。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">Opcode 查找</span>
+        <div class="btnrow">
+          <button class="btn" data-ops="RC" aria-pressed="true">RC</button>
+          <button class="btn" data-ops="UC" aria-pressed="false">UC</button>
+          <button class="btn" data-ops="UD" aria-pressed="false">UD</button>
+          <button class="btn" data-ops="RD" aria-pressed="false">RD</button>
+          <button class="btn ghost" data-ops="ALL" aria-pressed="false">全部</button>
+        </div>
+      </div>
+      <div class="tbl-wrap" style="margin-top:0">
+        <table>
+          <thead><tr><th class="num">Opcode</th><th class="num">二进制</th><th>操作</th><th>BTH 之后的头</th></tr></thead>
+          <tbody id="opBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 09 ============ -->
+<section class="sec alt" id="m09">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 09 · 分片</span>
+      <h2>PMTU 决定一个小消息之外的一切</h2>
+      <p class="lede">超过 PMTU 的消息会被网卡切成首包、中间包、尾包，opcode 随之改变。PMTU 越大，头部开销越小，但延迟抖动也越大。自己算一遍。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">实验 · 分片计算器</span>
+        <span class="inst-note">开销按 Eth 14 + IPv4 20 + UDP 8 + BTH 12 + ICRC 4 + FCS 4 = 62 B/包计</span>
+      </div>
+      <div class="lab">
+        <div class="field">
+          <label for="msgSize">消息长度（字节）</label>
+          <input id="msgSize" type="number" min="0" max="1073741824" step="1" value="65536">
+        </div>
+        <div class="field">
+          <label for="pmtu">Path MTU</label>
+          <select id="pmtu">
+            <option value="256">256</option>
+            <option value="512">512</option>
+            <option value="1024">1024</option>
+            <option value="2048">2048</option>
+            <option value="4096" selected>4096</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="opSel">操作</label>
+          <select id="opSel">
+            <option value="send">SEND</option>
+            <option value="write" selected>RDMA WRITE</option>
+            <option value="writeImm">RDMA WRITE + IMM</option>
+          </select>
+        </div>
+      </div>
+      <div class="out">
+        <div><b id="outPkts">—</b><span>报文数</span></div>
+        <div><b id="outOp">—</b><span>首包 Opcode</span></div>
+        <div><b id="outWire">—</b><span>线上总字节</span></div>
+        <div><b id="outEff">—</b><span>有效载荷占比</span></div>
+      </div>
+      <div class="pkts" id="pktStrip"></div>
+      <p class="inst-note" style="margin-top:12px">首包额外带 16 字节 RETH（远端地址 + rkey + 长度）；带立即数的尾包再加 4 字节 ImmDt。PMTU 4096 时头部开销正好 1.49%，与实测线速损耗吻合。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 10 ============ -->
+<section class="sec" id="m10">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 10 · 可靠性</span>
+      <h2>PSN、NAK 与 go-back-N</h2>
+      <p class="lede">可靠连接不是魔法：每个报文有 24 位序号，接收端发现跳号就回 NAK，发送端从缺的那个序号起重发后面全部。走一遍丢包现场。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">现场重演 · PSN 3 丢失</span>
+        <div class="btnrow">
+          <button class="btn" id="rlNext">下一步</button>
+          <button class="btn ghost" id="rlReset">重置</button>
+        </div>
+      </div>
+      <div class="frames" id="frames"></div>
+      <div class="log" id="rlLog" aria-live="polite"></div>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th class="num">AETH syndrome</th><th>含义</th><th>触发场景</th></tr></thead>
+        <tbody>
+          <tr><td class="num">0x00</td><td>ACK</td><td>正常确认，MSN 表示已收到的最新消息序号</td></tr>
+          <tr><td class="num">0x01</td><td>RNR NAK</td><td>接收队列没有可用的 RECV WR，等 min_rnr_timer 后重试</td></tr>
+          <tr><td class="num">0x60</td><td>无效请求 / 序号错误</td><td>PSN 跳号、opcode 与 QP 状态不符</td></tr>
+          <tr><td class="num">0x61</td><td>远端访问错误</td><td>rkey 无效、权限不足、地址越界</td></tr>
+          <tr><td class="num">0x62</td><td>远端无效 RD 请求</td><td>不支持的 RDMA READ 组合</td></tr>
+          <tr><td class="num">0x63</td><td>远端操作错误</td><td>对端内部错误，无法完成请求</td></tr>
+          <tr><td class="num">0x64</td><td>无效 RD 请求</td><td>RD 服务下的非法请求</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>超时重传和 NAK 重传是两套机制。<code>timeout</code> 字段是 4.096 µs × 2<sup>n</sup> 的本地确认超时，<code>retry_cnt</code> 控制超时重试次数，<code>rnr_retry</code> 控制收到 RNR 后的重试次数（7 表示无限）。三者都设得太小，链路稍有抖动 QP 就进 ERROR，所有未完成的 WR 变成 <code>IBV_WC_WR_FLUSH_ERR</code>。</p>
+      <p>要注意 RC 的回退是 <strong>go-back-N</strong> 而不是选择重传：一个包丢了，它之后的包即使已经到达也会被丢弃并重发。这也是为什么在高丢包率环境里，PMTU 太小会显著放大重传流量。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 11 ============ -->
+<section class="sec alt" id="m11">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 11 · 拥塞</span>
+      <h2>无损以太不是免费的</h2>
+      <p class="lede">InfiniBand 用链路级信用保证不丢包；RoCEv2 跑在以太网上，只能靠 PFC 造出“无损”，再用 ECN + DCQCN 免得这张无损网在拥塞时变成一张堵死的网。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">交换机出口队列 · 拖动看会发生什么</span>
+        <span class="inst-note">Kmin 30% · Kmax 70% · Pmax 100%</span>
+      </div>
+      <div class="gauge" aria-hidden="true">
+        <div class="fill" id="qFill"></div>
+        <div class="zones"><i style="width:30%"></i><i style="width:40%"></i><i style="width:25%"></i><i style="width:5%"></i></div>
+      </div>
+      <div class="glegend"><span>0</span><span>Kmin 30%</span><span>Kmax 70%</span><span>95%</span><span>100%</span></div>
+      <label class="field" style="margin-top:10px">
+        <span class="inst-t" style="letter-spacing:.08em">瞬时队列占用 <b id="qVal" class="mono">42%</b></span>
+        <input type="range" id="queue" min="0" max="100" value="42">
+      </label>
+      <label class="switch" style="margin-top:6px"><input type="checkbox" id="pfcOn" checked> 该优先级已启用 PFC（无损）</label>
+      <div class="verdict" id="ecnVerdict" aria-live="polite"></div>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p><strong>PFC</strong>（802.1Qbb）按优先级发 PAUSE 帧，让上游暂停发送，把“丢包”换成“排队”。它有效，但很脆：一台交换机暂停上游，上游的缓冲区开始堆积，可能再去暂停它的上游，形成反压链；配置成环时甚至会出现 PFC 死锁。所以生产环境通常把 PFC 限制在一个专用优先级上，并且只对 RoCE 流量开启。</p>
+      <p><strong>ECN + DCQCN</strong> 是端到端的闭环：交换机在队列超过 Kmin 后按概率给报文打 CE 标记；接收端网卡看到 CE，生成 CNP 回发给发送端；发送端按 α 比例降速，没有 CNP 时再按定时器慢慢升回来。α 随 CNP 密度增长，避免对单个标记反应过度。</p>
+      <p>还有一条更根本的差别：IB 的流控是<strong>逐跳信用制</strong>，接收方有多少缓冲就发多少信用，永远不会溢出；RoCEv2 的 PFC 是<strong>逐跳暂停</strong>，只能刹车，不能预约。这就是为什么 RoCE 集群的网络配置比 IB 复杂得多。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 12 ============ -->
+<section class="sec" id="m12">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 12 · 性能</span>
+      <h2>小消息看延迟，大消息看带宽</h2>
+      <p class="lede">同一张网卡，64 字节和 4 MB 的性能瓶颈完全不是一回事。下面这张表是排障时最先该看的东西。</p>
+    </div>
+
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>消息规模</th><th>主导因素</th><th>观察到的现象</th><th>该怎么做</th></tr></thead>
+        <tbody>
+          <tr><td class="num">≤ 256 B</td><td>延迟 + 消息率（Mpps）</td><td>带宽远低于线速，CPU 单核打满</td><td>用 inline 发送、减少 WR 数量、多 QP 分散到多核</td></tr>
+          <tr><td class="num">1 – 4 KB</td><td>延迟与每包开销</td><td>刚好一个 PMTU，效率 98.5%</td><td>确认 path_mtu=4096；小消息考虑合并</td></tr>
+          <tr><td class="num">64 KB</td><td>在途请求数（window）</td><td>单 QP 跑不满链路</td><td>增加 outstanding WR / max_rd_atomic，或多 QP</td></tr>
+          <tr><td class="num">≥ 1 MB</td><td>PCIe 与内存带宽</td><td>多流并发后总带宽不再增长</td><td>看 PCIe 代际与通道数、NUMA 亲和、DMA 写合并</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <h3>调优清单</h3>
+    <div class="prose">
+      <ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:7px">
+        <li><strong>预注册内存</strong>，把 <code>ibv_reg_mr</code> 移出热路径；确需动态缓冲区就用内存窗口或 ODP。</li>
+        <li><strong>选择性 signaling</strong>：只给需要确认的 WR 设 <code>IBV_SEND_SIGNALED</code>，其余靠 CQ 里的批量完成，减少 CQE 与中断。</li>
+        <li><strong>批量 poll</strong>：<code>ibv_poll_cq</code> 一次取 16–32 条；专用轮询核绑核，关掉该核的 C-state 与中断。</li>
+        <li><strong>PMTU 拉到 4096</strong>，并确认交换机 MTU 与两端一致；RoCEv2 常配 9000 字节巨型帧。</li>
+        <li><strong>多 QP 打散</strong>：单 QP 受发送窗口限制，多 QP 才能吃满 400G 端口；注意 QP 到核的亲和性。</li>
+        <li><strong>超时与重试</strong>：<code>timeout</code> 按 RTT 量级设置，<code>retry_cnt=7</code>、<code>rnr_retry=7</code> 在调试期更安全。</li>
+      </ul>
+    </div>
+
+    <h3>症状对照</h3>
+    <div class="tbl-wrap">
+      <table>
+        <thead><tr><th>症状</th><th>先查什么</th></tr></thead>
+        <tbody>
+          <tr><td>CQE 状态是 <code>IBV_WC_WR_FLUSH_ERR</code></td><td>QP 已进 ERROR：通常是重试耗尽，去看对端为什么没回 ACK</td></tr>
+          <tr><td><code>IBV_WC_REM_ACCESS_ERR</code></td><td>rkey 不匹配、权限不足、远端地址越界，或两端不在同一 PD</td></tr>
+          <tr><td>吞吐只有预期的一半</td><td>单 QP 窗口不足、PMTU 被协商成 1024、PCIe 不是 x16、跨 NUMA</td></tr>
+          <tr><td>延迟周期性抖动</td><td>中断合并、CPU 降频、C-state、其他进程抢核</td></tr>
+          <tr><td>偶发 RNR 重传</td><td>接收端 post_recv 不及时，或 SRQ 深度不够</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 13 ============ -->
+<section class="sec alt" id="m13">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 13 · 代码</span>
+      <h2>verbs 骨架：从开设备到拿到 CQE</h2>
+      <p class="lede">把前面所有概念落到代码上。注意顺序：资源创建 → 内存注册 → QP 状态迁移 → 投递 → 轮询。每一步漏掉，后面的调用就会以 EINVAL 失败。</p>
+    </div>
+
+    <div class="inst code-tabs">
+      <div class="inst-head">
+        <div class="tabs" role="tablist" id="codeTabs" style="margin:0;border:0">
+          <button class="tab" role="tab" data-code="res" aria-selected="true">资源与内存</button>
+          <button class="tab" role="tab" data-code="fsm" aria-selected="false">QP 迁移</button>
+          <button class="tab" role="tab" data-code="send" aria-selected="false">投递与轮询</button>
+        </div>
+      </div>
+
+      <div class="panel on" data-panel="res">
+<pre class="code">#include &lt;infiniband/verbs.h&gt;
+
+struct ibv_device **list = ibv_get_device_list(NULL);
+struct ibv_context *ctx  = ibv_open_device(list[0]);
+struct ibv_pd        *pd = ibv_alloc_pd(ctx);
+struct ibv_cq        *cq = ibv_create_cq(ctx, 256, NULL, NULL, 0);
+
+struct ibv_qp_init_attr qa = {
+  .send_cq = cq, .recv_cq = cq,
+  .cap = { .max_send_wr  = 128, .max_recv_wr  = 128,
+           .max_send_sge = 1,   .max_recv_sge = 1 },
+  .qp_type = IBV_QPT_RC,
+};
+struct ibv_qp *qp = ibv_create_qp(pd, &qa);
+
+/* 注册一次，长期复用。rkey 要通过带外（SEND/RECV）交给对端 */
+struct ibv_mr *mr = ibv_reg_mr(pd, buf, len,
+        IBV_ACCESS_LOCAL_WRITE  |
+        IBV_ACCESS_REMOTE_WRITE |
+        IBV_ACCESS_REMOTE_READ);</pre>
+      </div>
+
+      <div class="panel" data-panel="fsm">
+<pre class="code">struct ibv_qp_attr a = {0};
+int mask = 0;
+
+/* INIT：设置访问权限与端口 */
+a.qp_state        = IBV_QPS_INIT;
+a.pkey_index      = 0;
+a.port_num        = 1;
+a.qp_access_flags = IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ;
+mask = IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS;
+ibv_modify_qp(qp, &a, mask);
+
+/* RTR：指向对端。UD 只需 ah_attr，RC 还需要 QPN / PSN / MTU */
+memset(&a, 0, sizeof a);
+a.qp_state           = IBV_QPS_RTR;
+a.path_mtu           = IBV_MTU_4096;
+a.dest_qp_num        = remote_qpn;
+a.rq_psn             = 0;
+a.max_dest_rd_atomic = 1;
+a.min_rnr_timer      = 12;
+a.ah_attr.is_global  = 1;
+a.ah_attr.port_num   = 1;
+a.ah_attr.grh.dgid   = remote_gid;
+a.ah_attr.grh.sgid_index = gid_index;   /* 决定 RoCEv1 还是 v2 */
+mask = IBV_QP_STATE | IBV_QP_AV | IBV_QP_PATH_MTU | IBV_QP_DEST_QPN |
+       IBV_QP_RQ_PSN | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_MIN_RNR_TIMER;
+ibv_modify_qp(qp, &a, mask);
+
+/* RTS：此时才允许发送 */
+memset(&a, 0, sizeof a);
+a.qp_state      = IBV_QPS_RTS;
+a.sq_psn        = 0;
+a.timeout       = 14;
+a.retry_cnt     = 7;
+a.rnr_retry     = 7;
+a.max_rd_atomic = 1;
+mask = IBV_QP_STATE | IBV_QP_SQ_PSN | IBV_QP_TIMEOUT |
+       IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_MAX_QP_RD_ATOMIC;
+ibv_modify_qp(qp, &a, mask);</pre>
+      </div>
+
+      <div class="panel" data-panel="send">
+<pre class="code">/* 单边写：只需要远端地址和 rkey，对端无需 post_recv */
+struct ibv_sge sge = {
+  .addr   = (uintptr_t)buf,
+  .length = len,
+  .lkey   = mr-&gt;lkey,
+};
+
+struct ibv_send_wr wr = {0}, *bad = NULL;
+wr.wr_id      = 42;                    /* 原样回到 CQE */
+wr.opcode     = IBV_WR_RDMA_WRITE;
+wr.send_flags = IBV_SEND_SIGNALED;
+wr.sg_list    = &amp;sge;
+wr.num_sge    = 1;
+wr.wr.rdma.remote_addr = remote_addr;
+wr.wr.rdma.rkey        = remote_rkey;
+
+if (ibv_post_send(qp, &wr, &amp;bad) != 0) { /* 检查 bad 指向哪条 WR */ }
+
+/* 轮询完成。真实程序会一次取多条，并且检查 wc.status */
+struct ibv_wc wc;
+while (ibv_poll_cq(cq, 1, &amp;wc) == 0) { /* busy poll */ }
+
+if (wc.status != IBV_WC_SUCCESS) {
+  fprintf(stderr, "wr %lu failed: %s\n",
+          (unsigned long)wc.wr_id, ibv_wc_status_str(wc.status));
+}</pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 14 ============ -->
+<section class="sec" id="m14">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 14 · 端到端</span>
+      <h2>用 WRITE_WITH_IMM 拼一条生产者/消费者队列</h2>
+      <p class="lede">单边写入负责搬数据，立即数负责通知。生产者只写自己的内存加一次 doorbell；消费者等的是网卡投递的立即数，而不是去轮询共享内存。整个模型只有一个环缓冲区和一个计数器。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head">
+        <span class="inst-t">实验 · 环形缓冲区</span>
+        <div class="btnrow">
+          <button class="btn" id="rbAuto">自动生产</button>
+          <button class="btn ghost" id="rbReset">重置</button>
+        </div>
+      </div>
+
+      <div class="rb-lanes">
+        <div class="rb-lane">
+          <div class="rb-lane-h"><span class="pill a">节点 A</span> 生产者</div>
+          <div class="rb-lane-b">
+            <p class="rb-p">A 侧只持有一块本地 MR 和一个 &lt;remote_addr, rkey&gt; 对。每次生产：</p>
+            <ol class="rb-steps" id="prodSteps">
+              <li>写 64 字节记录进自己的发送缓冲</li>
+              <li>构造 WQE，opcode = WRITE_WITH_IMM</li>
+              <li>imm_data 里放环槽序号</li>
+              <li>post_send → doorbell</li>
+            </ol>
+            <button class="btn" id="rbProd">生产一条</button>
+            <div class="rb-metric"><span>已投递</span><b id="mProd" class="mono">0</b></div>
+            <div class="rb-metric"><span>窗口占用</span><b id="mWin" class="mono">0 / 3</b></div>
+          </div>
+        </div>
+
+        <div class="rb-mid">
+          <div class="rb-lane-h"><span class="pill">线路</span> 单边写入，对端无 WR</div>
+          <div class="ring" id="ring" role="list" aria-label="对端环形缓冲区，8 个槽位"></div>
+          <div class="ring-meta">
+            <span>head <b id="rHead" class="mono">0</b></span>
+            <span>tail <b id="rTail" class="mono">0</b></span>
+            <span>占用 <b id="rUsed" class="mono">0/8</b></span>
+          </div>
+          <div class="rb-legend">
+            <span><i class="lg lg-empty"></i>空</span>
+            <span><i class="lg lg-fill"></i>已写未消费</span>
+            <span><i class="lg lg-read"></i>刚消费</span>
+          </div>
+        </div>
+
+        <div class="rb-lane">
+          <div class="rb-lane-h"><span class="pill b">节点 B</span> 消费者</div>
+          <div class="rb-lane-b">
+            <p class="rb-p">B 侧从没 post 过 recv WR。它只在 CQ 上等，拿到的 CQE 带 <code>IBV_WC_RECV_RDMA_WITH_IMM</code> 与 imm_data：</p>
+            <div class="cq" id="cq" aria-label="完成队列">
+              <div class="cq-empty" id="cqEmpty">CQ 为空 · polling</div>
+            </div>
+            <button class="btn" id="rbCons">消费一条</button>
+            <div class="rb-metric"><span>已消费</span><b id="mCons" class="mono">0</b></div>
+            <div class="rb-metric"><span>收到的 imm</span><b id="mImm" class="mono">—</b></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="log rb-log" id="rbLog" aria-live="polite"></div>
+    </div>
+
+    <div class="prose" style="margin-top:24px">
+      <p>这个设计的精妙处在于<strong>通知与数据走同一条路径</strong>。普通的 RDMA WRITE 是静默的：数据写进对端内存，对端不会收到任何事件，只能自己轮询一个标志位。加上 IMM 之后，网卡在写完之后额外生成一条 CQE，把 32 位立即数送到消费者的完成队列里——数据到达与通知到达是原子的，不存在“数据还没落盘就收到通知”的窗口。</p>
+      <p>环槽序号放在立即数里，而不是放在记录头里，这样消费者<strong>不需要读内存就能知道该处理哪个槽</strong>。这也是为什么真实系统里 imm_data 总是编码索引、长度或标志位：它是唯一能在不额外读内存的情况下随完成事件一起送达的信息。</p>
+      <p>流控是另一半。环形缓冲区的容量是 8，生产者的发送窗口是 3，两者共同决定生产者能跑多快。窗口小于环深度，是为了让“窗口用尽”比“环满”更早发生——这也是真实系统的常态：<code>max_send_wr</code> 通常远小于对端能容纳的消息数，瓶颈在网卡的在途请求表，而不在内存。窗口用尽时，生产者的下一次 <code>post_send</code> 会返回 <code>ENOMEM</code>；环满则需要消费者先取走数据。真实系统里，环满的信号通过反向的 WRITE_WITH_IMM 回传——两个方向各一条 QP，构成完整的信用闭环。</p>
+    </div>
+
+    <div class="inst">
+      <div class="inst-head"><span class="inst-t">对应的 verbs 调用</span></div>
+<pre class="code">/* 消费者：启动时 post 一批 recv WR，接收 IMM 通知 */
+for (int i = 0; i &lt; DEPTH; i++) {
+  struct ibv_recv_wr rwr = {0};
+  struct ibv_sge rsge = { .addr = (uintptr_t)&cbuf[i], .length = 1,
+                          .lkey = cmr-&gt;lkey };
+  rwr.wr_id = i;
+  rwr.sg_list = &amp;rsge;
+  rwr.num_sge = 1;
+  ibv_post_recv(cqp, &amp;rwr, &amp;bad);
+}
+
+/* 消费者主循环：唯一阻塞点是 CQ，不是内存 */
+while (running) {
+  struct ibv_wc wc;
+  if (ibv_poll_cq(ccq, 1, &amp;wc) == 0) continue;
+  if (wc.opcode == IBV_WC_RECV_RDMA_WITH_IMM) {
+    uint32_t slot = wc.imm_data;     /* 立即数 = 环槽序号 */
+    process(&amp;ring[slot]);
+    head = (head + 1) % RING_SIZE;
+  }
+}
+
+/* 生产者：一次 post_send = 搬数据 + 敲门 */
+struct ibv_send_wr w = {0};
+w.wr_id      = slot;
+w.opcode     = IBV_WR_RDMA_WRITE_WITH_IMM;
+w.imm_data   = slot;                 /* 32 位，随完成事件送达 */
+w.send_flags = IBV_SEND_SIGNALED;
+w.sg_list    = &amp;dsge;
+w.num_sge    = 1;
+w.wr.rdma.remote_addr = ring_addr + slot * RECORD_SIZE;
+w.wr.rdma.rkey        = ring_rkey;
+ibv_post_send(qp, &amp;w, &amp;bad);</pre>
+    </div>
+  </div>
+</section>
+
+<!-- ============ 15 ============ -->
+<section class="sec alt" id="m15">
+  <div class="wrap">
+    <div class="sec-head">
+      <span class="eyebrow">模块 15 · 参考</span>
+      <h2>术语表与动手实验</h2>
+      <p class="lede">最后是查表用的部分。没有 RDMA 网卡也能练：Linux 的 soft-RoCE（rxe）驱动在普通以太网上实现了一套软件 QP，语义与硬件一致，只是慢。</p>
+    </div>
+
+    <div class="field gsearch">
+      <label for="gq">过滤术语</label>
+      <input id="gq" type="search" placeholder="例如 rkey、PSN、CQ">
+    </div>
+    <dl class="gloss" id="gloss"></dl>
+
+    <div class="cta">
+      <h3>动手：在自己机器上跑通一条 RC 连接</h3>
+      <ul>
+        <li><code>sudo rdma link add rxe0 type rxe netdev eth0</code> —— 创建软件 RDMA 设备（内核需 CONFIG_RDMA_RXE）。</li>
+        <li><code>ibv_devices</code> / <code>ibv_devinfo -d rxe0 -v</code> —— 确认设备、GID 表与支持的 QP 类型。</li>
+        <li><code>ib_write_bw -d rxe0 -s 4096 -n 10000</code> —— 双边跑一次 WRITE 带宽；换 <code>ib_write_lat</code> 看延迟。</li>
+        <li><code>ib_send_bw</code> / <code>ib_send_lat</code> —— 对比双边 SEND 与单边 WRITE 的差异，体会接收端 CPU 的作用。</li>
+        <li>用 <code>tcpdump -i eth0 udp port 4791 -XX</code> 抓一次 RoCEv2，对照第 08 节逐字节读 BTH。</li>
+      </ul>
+    </div>
+
+    <p class="cap" style="margin-top:20px">参考资料：InfiniBand Architecture Specification Vol.1（传输层 BTH/AETH/RETH、QP 状态机、opcode 表）；Linux 内核 <code>include/rdma/ib_verbs.h</code> 与 rdma-core 手册页（ibv_reg_mr、ibv_modify_qp）；RoCEv2 规范（UDP 4791、无损以太与 DCQCN）。数值均为量级示意，具体以你的网卡与固件为准。</p>
+  </div>
+</section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>RDMA 底层手册 · 交互式学习页。所有图示为示意，字段宽度与报文比例以规范为准；性能数字随代际、固件与配置变化，仅用于建立量级直觉。</p>
+  </div>
+</footer>
+
+<script src="app.js" charset="utf-8"></script>
