@@ -96,13 +96,13 @@
 
   /* ---------------- 02 对象 ---------------- */
   var OBJS = [
-    { k: 'PD', name: '保护域', sub: 'struct ibv_pd', d: '一个隔离容器：同一个 PD 里的对象才能互相访问。它的本质是网卡里的一张区域表条目，注册内存和创建 QP 都挂在它下面。', kv: [['创建', 'ibv_alloc_pd(ctx)'], ['粒度', '每个进程通常一个'], ['约束', '跨 PD 的 rkey 一律判访问错误']] },
-    { k: 'MR', name: '内存区域', sub: 'struct ibv_mr', d: '被注册并 pin 住的虚拟内存。注册时驱动建立 MTT/MPT，把虚拟页映射成网卡可寻址的物理地址，并一次性写入允许的远端操作。', kv: [['创建', 'ibv_reg_mr(pd, addr, len, flags)'], ['返回', 'lkey（本端）· rkey（给对端）'], ['代价', '与页数成正比，别放在热路径']] },
-    { k: 'QP', name: '队列对', sub: 'struct ibv_qp', d: '一对发送队列（SQ）与接收队列（RQ），加上一整套状态和计数器（PSN、重传、超时）。它是连接本身，硬件每次收发都按 QPN 找到这个上下文。', kv: [['标识', 'QPN，24 位'], ['状态', 'RESET → INIT → RTR → RTS → ERROR'], ['容量', '创建时确定 max_send_wr / max_recv_wr']] },
-    { k: 'CQ', name: '完成队列', sub: 'struct ibv_cq', d: '完成事件队列。每个 WR 完成后放进一条 CQE：状态、长度、wr_id。一个 CQ 可以被多个 QP 共享，也是唯一的异步结果来源。', kv: [['创建', 'ibv_create_cq(ctx, cqe, ctx, channel, comp_vector)'], ['读取', 'ibv_poll_cq(cq, n, &wc)'], ['注意', '消费后必须归还（poll 即归还）']] },
-    { k: 'SRQ', name: '共享接收队列', sub: 'struct ibv_srq', d: '多个 QP 共用一份接收 WR 池。为“服务端有几千个连接但不知道谁会先来消息”的场景准备，省掉每个 QP 各配一队接收缓冲的浪费。', kv: [['使用', 'QP 创建时 qp_type 配 IBV_QPT_RC + srq'], ['CQE', '带 qp_num 字段区分来源'], ['限制', 'UD 的接收也要靠 SRQ 才现实']] },
-    { k: 'AH', name: '地址句柄', sub: 'struct ibv_ah', d: 'UD 传输的目的地址封装：GRH（全局路由头）里的 GID、服务级别、端口。因为 UD 无连接，每条消息都要靠它指明去哪。', kv: [['创建', 'ibv_create_ah(pd, &ah_attr)'], ['内容', 'dgid、sgid_index、flow_label、hop_limit'], ['用于', 'UD 发送与多播加入']] },
-    { k: 'MW', name: '内存窗口', sub: 'struct ibv_mw', d: '在一块已注册的 MR 上临时切出一段，分配一个新的 rkey，用完销毁。用于把大块内存零拷贝地、按需授权给不同对端，而不必反复注册。', kv: [['创建', 'ibv_alloc_mw(pd, IBV_MW_TYPE_2)'], ['授权', 'ibv_bind_mw(qp, mw, &bind_info)'], ['收益', '避免重注册，权限可快速吊销']] }
+    { k: 'PD', name: '保护域', sub: 'struct ibv_pd · Protection Domain', d: '一个隔离容器：同一个 PD 里的对象才能互相访问。它的本质是网卡里的一张区域表条目，注册内存和创建 QP 都挂在它下面。', kv: [['创建', 'ibv_alloc_pd(ctx)'], ['粒度', '每个进程通常一个'], ['约束', '跨 PD 的 rkey 一律判访问错误']] },
+    { k: 'MR', name: '内存区域', sub: 'struct ibv_mr · Memory Region', d: '被注册并 pin 住的虚拟内存。注册时驱动建立 MTT/MPT（Memory Translation Table / Memory Protection Table，内存翻译表 / 保护表），把虚拟页映射成网卡可寻址的物理地址，并一次性写入允许的远端操作。', kv: [['创建', 'ibv_reg_mr(pd, addr, len, flags)'], ['返回', 'lkey（local key，本地键）· rkey（remote key，远端键）'], ['代价', '与页数成正比，别放在热路径']] },
+    { k: 'QP', name: '队列对', sub: 'struct ibv_qp · Queue Pair', d: '一对发送队列（SQ，Send Queue）与接收队列（RQ，Receive Queue），加上一整套状态和计数器（PSN、重传、超时）。它是连接本身，硬件每次收发都按 QPN（Queue Pair Number，队列对号）找到这个上下文。', kv: [['标识', 'QPN，24 位'], ['状态', 'RESET → INIT → RTR → RTS → ERROR'], ['容量', '创建时确定 max_send_wr / max_recv_wr']] },
+    { k: 'CQ', name: '完成队列', sub: 'struct ibv_cq · Completion Queue', d: '完成事件队列。每个 WR（Work Request，工作请求）完成后放进一条 CQE（Completion Queue Entry，完成队列条目）：状态、长度、wr_id。一个 CQ 可以被多个 QP 共享，也是唯一的异步结果来源。', kv: [['创建', 'ibv_create_cq(ctx, cqe, ctx, channel, comp_vector)'], ['读取', 'ibv_poll_cq(cq, n, &wc)'], ['注意', '消费后必须归还（poll 即归还）']] },
+    { k: 'SRQ', name: '共享接收队列', sub: 'struct ibv_srq · Shared Receive Queue', d: '多个 QP 共用一份接收 WR 池。为“服务端有几千个连接但不知道谁会先来消息”的场景准备，省掉每个 QP 各配一队接收缓冲的浪费。', kv: [['使用', 'QP 创建时 qp_type 配为 IBV_QPT_RC 并挂上 srq'], ['CQE', '带 qp_num 字段区分来源'], ['限制', 'UD 的接收也要靠 SRQ 才现实']] },
+    { k: 'AH', name: '地址句柄', sub: 'struct ibv_ah · Address Handle', d: 'UD（Unreliable Datagram，不可靠数据报）传输的目的地址封装：GRH（Global Routing Header，全局路由头）里的 GID（Global Identifier，全局标识）、服务级别、端口。因为 UD 无连接，每条消息都要靠它指明去哪。', kv: [['创建', 'ibv_create_ah(pd, &ah_attr)'], ['内容', 'dgid、sgid_index、flow_label、hop_limit'], ['用于', 'UD 发送与多播加入']] },
+    { k: 'MW', name: '内存窗口', sub: 'struct ibv_mw · Memory Window', d: '在一块已注册的 MR 上临时切出一段，分配一个新的 rkey，用完销毁。用于把大块内存零拷贝地、按需授权给不同对端，而不必反复注册。', kv: [['创建', 'ibv_alloc_mw(pd, IBV_MW_TYPE_2)'], ['授权', 'ibv_bind_mw(qp, mw, &bind_info)'], ['收益', '避免重注册，权限可快速吊销']] }
   ];
   var chipsEl = $('#objChips'), panelEl = $('#objPanel');
   chipsEl.innerHTML = OBJS.map(function (o, i) {
@@ -215,12 +215,12 @@
 
   /* ---------------- 05 传输服务 ---------------- */
   var TR = {
-    RC: '<b>RC · 可靠连接</b>一个 QP 只对一条连接，硬件维护 PSN、ACK/NAK、重传与乱序重排。所有操作都支持，代价是每对通信双方都要一个 QP——在 N 节点 p 进程的集群里，QP 数量按 N·p² 增长，网卡缓存与连接表会先于带宽成为瓶颈。',
-    UC: '<b>UC · 不可靠连接</b>同样一对一，但丢包就丢消息，没有 ACK、没有重传。只能 Send/Recv 与 RDMA Write，<b>不能 RDMA Read，也不能 Atomic</b>——因为读需要可靠的应答。实际部署很少见。',
-    UD: '<b>UD · 不可靠数据报</b>一条 QP 可以发给任意目的地，靠 DETH 头里的目的 QPN 寻址；接收端靠 GRH 得知来源。代价：单条消息不能超过 PMTU，不能保证顺序，不能使用单边操作。典型用途是建连前的地址交换、多播与路由发现。',
-    RD: '<b>RD · 可靠数据报</b>概念上把 RC 的可靠性带到数据报上，需要 EEC（扩展可靠连接）对象。实现复杂、厂商支持有限，市场上基本被 DC 取代。',
-    XRC: '<b>XRC · 扩展可靠连接</b>把接收侧拆出来共享：一个进程可以发往多个进程，而所有连接共享同一个接收 QP。解决的是“服务端 QP 数量爆炸”，发送侧仍然每个连接一个。',
-    DC: '<b>DC · 动态连接</b>发送时只写 DCT 号，由硬件在需要时建立连接上下文。应用面看不到建连过程，适合 GPU 集群里成千上万的通信对。需要 DC 能力的网卡与专门的 verbs 扩展。'
+    RC: '<b>RC · Reliable Connection（可靠连接）</b>一个 QP 只对一条连接，硬件维护 PSN、ACK/NAK、重传与乱序重排。所有操作都支持，代价是每对通信双方都要一个 QP——在 N 节点 p 进程的集群里，QP 数量按 N·p² 增长，网卡缓存与连接表会先于带宽成为瓶颈。',
+    UC: '<b>UC · Unreliable Connection（不可靠连接）</b>同样一对一，但丢包就丢消息，没有 ACK（Acknowledgement，确认）、没有重传。只能 Send/Recv 与 RDMA Write，<b>不能 RDMA Read，也不能 Atomic</b>——因为读需要可靠的应答。实际部署很少见。',
+    UD: '<b>UD · Unreliable Datagram（不可靠数据报）</b>一条 QP 可以发给任意目的地，靠 DETH（Datagram Extended Transport Header，数据报扩展头）里的目的 QPN 寻址；接收端靠 GRH（Global Routing Header，全局路由头）得知来源。代价：单条消息不能超过 PMTU，不能保证顺序，不能使用单边操作。典型用途是建连前的地址交换、多播与路由发现。',
+    RD: '<b>RD · Reliable Datagram（可靠数据报）</b>概念上把 RC 的可靠性带到数据报上，需要 EEC（End-to-End Context，端到端上下文）对象。实现复杂、厂商支持有限，市场上基本被 DC 取代。',
+    XRC: '<b>XRC · eXtended Reliable Connection（扩展可靠连接）</b>把接收侧拆出来共享：一个进程可以发往多个进程，而所有连接共享同一个接收 QP。解决的是“服务端 QP 数量爆炸”，发送侧仍然每个连接一个。',
+    DC: '<b>DC · Dynamic Connection（动态连接）</b>发送时只写 DCT（Dynamic Connection Target，动态连接目标号），由硬件在需要时建立连接上下文。应用面看不到建连过程，适合 GPU 集群里成千上万的通信对。需要 DC 能力的网卡与专门的 verbs 扩展。'
   };
   var trBody = $('#trBody'), trPanel = $('#trPanel');
   trBody.addEventListener('click', function (e) {
@@ -235,13 +235,13 @@
   var STAGES = ['SQ', 'WQE', 'NIC', '线路', '对端', 'RQ', 'CQ'];
   var STEPS = [
     [1, '<b>准备 WQE。</b>把 wr_id、opcode、sg_list、remote_addr、rkey 填进工作请求结构。libibverbs 把它拷到你 mmap 出来的发送队列环形缓冲区的下一个槽位。'],
-    [2, '<b>敲 doorbell。</b>对网卡的用户态寄存器做一次 64 位写，传入 SQ 的新尾指针。这是一次 MMIO，不陷入内核，约几十纳秒。'],
-    [1, '<b>硬件读 WQE。</b>网卡 DMA 把描述符取进自己的缓存，按 lkey 查 MTT 翻译表，得到 sg_list 指向数据的物理页。'],
-    [2, '<b>DMA 取数据并组包。</b>若消息超过 PMTU，硬件按 PMTU 切片，逐片填 BTH（QPN、PSN、opcode），首片附 RETH（remote_addr + rkey + 长度）。'],
-    [3, '<b>上线。</b>RoCEv2 下依次套 UDP(4791)、IP、以太头，尾部加 ICRC 与 FCS。PSN 随包递增，写进网卡的发送计数器。'],
-    [4, '<b>对端网卡校验。</b>检查 ICRC、P_Key、QPN 是否存在、PSN 是否连续、rkey 权限是否足够。任何一项不过就发 NAK。'],
+    [2, '<b>敲 doorbell。</b>对网卡的用户态寄存器做一次 64 位写，传入 SQ 的新尾指针。这是一次 MMIO（Memory-Mapped I/O，内存映射 I/O），不陷入内核，约几十纳秒。'],
+    [1, '<b>硬件读 WQE。</b>网卡用 DMA（Direct Memory Access，直接内存访问）把描述符取进自己的缓存，按 lkey 查 MTT（Memory Translation Table，内存翻译表）得到 sg_list 指向数据的物理页。'],
+    [2, '<b>DMA 取数据并组包。</b>若消息超过 PMTU，硬件按 PMTU 切片，逐片填 BTH，首片附 RETH（remote_addr + rkey + 长度）。'],
+    [3, '<b>上线。</b>RoCEv2 下依次套 UDP(4791)、IP、以太头，尾部加 ICRC 与 FCS（Frame Check Sequence，帧校验序列）。PSN 随包递增，写进网卡的发送计数器。'],
+    [4, '<b>对端网卡校验。</b>检查 ICRC、P_Key、QPN 是否存在、PSN 是否连续、rkey 权限是否足够。任何一项不过就发 NAK（Negative Acknowledgement，否定确认）。'],
     [5, '<b>直接写入内存。</b>按 RETH 的虚拟地址与 rkey 查对端翻译表，把负载 DMA 到应用缓冲区。对端 CPU、内核、页表全程不参与。'],
-    [6, '<b>回 ACK，产生 CQE。</b>对端回 AETH 确认；本端网卡在本机 CQ 里写入一条 CQE（状态、长度、wr_id）。应用 poll_cq 取走。']
+    [6, '<b>回 ACK，产生 CQE。</b>对端回 AETH（Acknowledgement Extended Transport Header，确认扩展头）；本端网卡在本机 CQ 里写入一条 CQE（Completion Queue Entry，完成队列条目）。应用 poll_cq 取走。']
   ];
   var pipeEl = $('#pipe'), stepsEl = $('#steps'), curStep = -1, pipeTimer = null;
   pipeEl.innerHTML = STAGES.map(function (s, i) {
@@ -364,14 +364,14 @@
 
   /* ---------------- 08 报文 ---------------- */
   var SEGS = [
-    ['Eth', '14 B', '以太头', '目的/源 MAC 与 EtherType。RoCEv2 用 IPv4 时是 0x0800；VLAN 标签会让它变成 18 字节。'],
+    ['Eth', '14 B', '以太头', '目的/源 MAC 与 EtherType（以太网类型）。RoCEv2 用 IPv4 时是 0x0800；VLAN 标签会让它变成 18 字节。'],
     ['IPv4', '20 B', 'IP 头', 'Protocol = 17（UDP）。RoCEv2 的路由完全依赖它——这也是 RoCE 能跨三层而 IB 不能的原因。'],
-    ['UDP', '8 B', '目的端口 4791', '源端口由硬件按 QP 哈希，用于 ECMP 熵。4791 是 RoCEv2 的注册端口，防火墙必须放行。'],
-    ['BTH', '12 B', 'Base Transport Header', '每个报文都有。opcode 说明做什么，QPN 说明发给谁，PSN 说明序号。'],
-    ['RETH', '16 B', 'RDMA Extended Transport Header', '只在 WRITE / READ 的首包出现：64 位远端虚拟地址、32 位 rkey、32 位总长度。'],
+    ['UDP', '8 B', '目的端口 4791', '源端口由硬件按 QP 哈希，用于 ECMP（Equal-Cost Multi-Path，等价多路径）熵。4791 是 RoCEv2 的注册端口，防火墙必须放行。'],
+    ['BTH', '12 B', 'Base Transport Header（基础传输头）', '每个报文都有。opcode 说明做什么，QPN 说明发给谁，PSN 说明序号。'],
+    ['RETH', '16 B', 'RDMA Extended Transport Header（RDMA 扩展传输头）', '只在 WRITE / READ 的首包出现：64 位远端虚拟地址、32 位 rkey、32 位总长度。'],
     ['Payload', '≤ PMTU', '负载', '不含任何 RDMA 头的数据。最大长度由 path_mtu 协商，常用 1024 或 4096。'],
-    ['ICRC', '4 B', 'Invariant CRC', '覆盖从 BTH 到负载的全部内容，以及 IP 头里不随时间变化的字段。硬件重算，不匹配直接静默丢弃。'],
-    ['FCS', '4 B', '以太帧校验', '由以太网 PHY 计算。RoCE 同时有 FCS 和 ICRC，前者防线路错误，后者防止转发过程中头部被改写。']
+    ['ICRC', '4 B', 'Invariant CRC（不变循环冗余校验）', '覆盖从 BTH 到负载的全部内容，以及 IP 头里不随时间变化的字段。硬件重算，不匹配直接静默丢弃。'],
+    ['FCS', '4 B', 'Frame Check Sequence（帧校验序列）', '由以太网 PHY（Physical Layer，物理层）计算。RoCE 同时有 FCS 和 ICRC，前者防线路错误，后者防止转发过程中头部被改写。']
   ];
   var psegEl = $('#psegs'), segPanel = $('#segPanel');
   psegEl.innerHTML = SEGS.map(function (s, i) {
@@ -390,20 +390,20 @@
   var BTH_ROWS = [
     [
       ['opcode', 8, '操作码', '高 3 位选择传输服务（RC 0x00 / UC 0x20 / RD 0x40 / UD 0x60），低 5 位选择具体操作与分片位置。接收端靠它决定后续该解析哪个扩展头。'],
-      ['SE', 1, 'Solicited Event', '请求接收端在完成时产生一个 solicited 事件，用于降低通知延迟。多数实现忽略它。'],
-      ['M', 1, '迁移状态', 'Migration Request，用于连接迁移。正常数据路径恒为 0。'],
-      ['PadCnt', 2, '填充字节数', '负载补齐到 4 字节边界的字节数，取值 0–3，接收端据此裁剪。'],
-      ['TVer', 4, '传输头版本', '当前为 0。非 0 的报文会被当作不支持的版本丢弃。'],
-      ['P_Key', 16, '分区键', '相当于租户隔离：只有 P_Key 匹配（含成员位）的两个 QP 才能通信。与 PD 是两套独立机制。']
+      ['SE', 1, 'Solicited Event（请求事件）', '请求接收端在完成时产生一个 solicited 事件，用于降低通知延迟。多数实现忽略它。'],
+      ['M', 1, 'Migration（迁移状态）', 'Migration Request，用于连接迁移。正常数据路径恒为 0。'],
+      ['PadCnt', 2, 'Padding Count（填充字节数）', '负载补齐到 4 字节边界的字节数，取值 0–3，接收端据此裁剪。'],
+      ['TVer', 4, 'Transport Version（传输头版本）', '当前为 0。非 0 的报文会被当作不支持的版本丢弃。'],
+      ['P_Key', 16, 'Partition Key（分区键）', '相当于租户隔离：只有 P_Key 匹配（含成员位）的两个 QP 才能通信。与 PD 是两套独立机制。']
     ],
     [
       ['Reserved', 8, '保留', '发送时置 0，接收时忽略。'],
-      ['Dest QP', 24, '目的队列号', '整个报文的投递依据：网卡用它找到目标 QP 及其状态、PSN 计数器、接收队列。UD 下它与 DETH 里的 QPN 配合使用。']
+      ['Dest QP', 24, '目的队列号', '整个报文的投递依据：网卡用它找到目标 QP（Queue Pair，队列对）及其状态、PSN 计数器、接收队列。UD 下它与 DETH（Datagram Extended Transport Header，数据报扩展头）里的 QPN 配合使用。']
     ],
     [
-      ['A', 1, '确认请求', '置 1 表示要求接收端回 ACK。可靠性传输靠它触发确认，批量发送时网卡会按策略稀疏置位。'],
+      ['A', 1, '确认请求', '置 1 表示要求接收端回 ACK（Acknowledgement，确认）。可靠性传输靠它触发确认，批量发送时网卡会按策略稀疏置位。'],
       ['Reserved', 7, '保留', '置 0。'],
-      ['PSN', 24, '包序号', '可靠传输的核心。每个包递增，接收端发现跳号就回 NAK，发送端从缺口起重发。窗口大小与 PSN 空间共同决定在途报文上限。']
+      ['PSN', 24, 'Packet Sequence Number（包序号）', '可靠传输的核心。每个包递增，接收端发现跳号就回 NAK（Negative Acknowledgement，否定确认），发送端从缺口起重发。窗口大小与 PSN 空间共同决定在途报文上限。']
     ]
   ];
   var bthEl = $('#bth'), bitPanel = $('#bitPanel');
@@ -556,7 +556,7 @@
       qFill.style.background = 'var(--ok)';
     } else if (q < 70) {
       var p = ((q - 30) / 40) * 100;
-      v = '概率标记区：约 <b>' + p.toFixed(0) + '%</b> 的报文被标记 CE。接收端网卡每个标记生成一条 CNP，发送端按 α 降速，α 随标记密度上升。';
+      v = '概率标记区：约 <b>' + p.toFixed(0) + '%</b> 的报文被打上 CE（Congestion Experienced，已拥塞）标记。接收端网卡每个标记生成一条 CNP（Congestion Notification Packet，拥塞通知报文），发送端按 α 降速，α 随标记密度上升。';
       qFill.style.background = 'var(--b)';
     } else if (q < 95) {
       v = '超过 Kmax（70%），<b>所有报文</b>都打 CE。发送端应迅速降速；若持续满标记，说明链路确实拥塞，而不是偶发抖动。';

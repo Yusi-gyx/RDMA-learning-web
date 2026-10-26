@@ -519,8 +519,8 @@ section[id]{scroll-margin-top:74px}
 
 <section class="hero">
   <div class="wrap">
-    <span class="eyebrow">InfiniBand / RoCEv2 · 传输层</span>
-    <h1>一次 RDMA 写入，<br>网络里<em>到底</em>发生了什么</h1>
+    <span class="eyebrow">InfiniBand（IB，无限带宽） / RoCEv2（RDMA over Converged Ethernet v2） · 传输层</span>
+    <h1>一次 RDMA（Remote Direct Memory Access，远程直接内存访问）写入，<br>网络里<em>到底</em>发生了什么</h1>
     <p class="lede">
       把 RDMA 拆到最底层：保护域与内存键如何授权一次远端写入，队列对怎样一步步进入可发送状态，
       一个 WQE 如何变成 RoCEv2 报文，丢包之后由谁重传。每一节都能动手操作。
@@ -529,7 +529,7 @@ section[id]{scroll-margin-top:74px}
     <div class="stats">
       <div class="stat"><b>~1 µs</b><span>小消息单跳延迟量级，比内核 TCP 少一个数量级</span></div>
       <div class="stat"><b>0 次拷贝</b><span>数据路径上应用内存与网卡之间直接 DMA</span></div>
-      <div class="stat"><b>24 bit</b><span>QPN 与 PSN 的位宽，决定了并发连接与乱序窗口的边界</span></div>
+      <div class="stat"><b>24 bit</b><span>QPN（Queue Pair Number，队列对号）与 PSN（Packet Sequence Number，包序号）的位宽，决定了并发连接与乱序窗口的边界</span></div>
     </div>
 
     <div class="ribbon" role="img" aria-label="RoCEv2 帧结构：以太头 14 字节，IPv4 20 字节，UDP 8 字节，BTH 12 字节，RETH 16 字节，负载，ICRC 4 字节，FCS 4 字节">
@@ -542,7 +542,7 @@ section[id]{scroll-margin-top:74px}
       <div class="rb"><span>ICRC</span><b>4 B</b></div>
       <div class="rb"><span>FCS</span><b>4 B</b></div>
     </div>
-    <p class="cap">RoCEv2 帧。<b>头部已刻意放大</b>，实际 4 KB 负载时头部只占约 1.5%。行内所有数值以 IBTA 1.x 规范与 Linux rdma-core verbs 为准，性能数字为量级参考。</p>
+    <p class="cap">RoCEv2 帧。BTH = Base Transport Header（基础传输头），RETH = RDMA Extended Transport Header（RDMA 扩展传输头），ICRC = Invariant CRC（不变循环冗余校验），FCS = Frame Check Sequence（帧校验序列）。<b>头部已刻意放大</b>，实际 4 KB 负载时头部只占约 1.5%。行内所有数值以 IBTA（InfiniBand Trade Association，行业联盟规范）1.x 与 Linux rdma-core verbs 为准，性能数字为量级参考。</p>
   </div>
 </section>
 
@@ -552,7 +552,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 01 · 动机</span>
       <h2>传统网络栈把 CPU 放在了数据路径正中间</h2>
-      <p class="lede">一次 4 KB 的 TCP 发送，数据要被内核复制、排队、加锁，再逐层封装；接收端反过来再走一遍。RDMA 把整个协议栈下沉进网卡，CPU 只负责下指令和收结果。</p>
+      <p class="lede">一次 4 KB 的 TCP 发送，数据要被内核复制、排队、加锁，再逐层封装；接收端反过来再走一遍。RDMA 把整个协议栈下沉进网卡（HCA / RNIC，Host Channel Adapter / RDMA NIC），CPU 只负责下指令和收结果。</p>
     </div>
 
     <div class="inst">
@@ -573,7 +573,7 @@ section[id]{scroll-margin-top:74px}
         </div>
         <div>
           <h4>RDMA</h4>
-          <p>应用在用户态写 WQE、敲一次 doorbell。网卡自己取数据、组包、重传、写对端内存。远端 CPU 在数据路径上完全不参与，小消息延迟进入微秒级。</p>
+          <p>应用在用户态写 WQE（Work Queue Element，工作队列元素）、敲一次 doorbell（门铃寄存器）。网卡自己取数据、组包、重传、写对端内存。远端 CPU 在数据路径上完全不参与，小消息延迟进入微秒级。</p>
         </div>
       </div>
     </div>
@@ -591,7 +591,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 02 · 对象模型</span>
       <h2>六个对象，一条铁律</h2>
-      <p class="lede">RDMA 的 API 是一组需要显式创建、显式销毁的对象。它们的从属关系决定了哪些操作能互相看见——点开每个对象看它在协议里对应什么。</p>
+      <p class="lede">RDMA 的 API 是一组需要显式创建、显式销毁的对象。它们的从属关系决定了哪些操作能互相看见——点开每个对象看它在协议里对应什么。缩写在点开后的面板里给出全称。</p>
     </div>
 
     <div class="obj-grid">
@@ -645,7 +645,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 03 · 内存</span>
       <h2>注册，是为了让网卡绕过 MMU</h2>
-      <p class="lede">网卡不懂页表。注册内存时，驱动把这批页 pin 住，把物理地址写进网卡自己的翻译表（MPT / MTT），并发给你两把钥匙：本地用的 lkey，和可以交给对端的 rkey。</p>
+      <p class="lede">网卡不懂页表。注册内存时，驱动把这批页 pin 住，把物理地址写进网卡自己的翻译表（MPT / MTT），并发给你两把钥匙：本地用的 lkey（local key，本地键），和可以交给对端的 rkey（remote key，远端键）。</p>
     </div>
 
     <div class="prose">
@@ -676,7 +676,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 04 · 连接状态</span>
       <h2>QP 状态机：四个状态，一次都跳不过去</h2>
-      <p class="lede">新建的 QP 什么都不能做。它必须按 RESET → INIT → RTR → RTS 逐步迁移，每一步只允许设置一组特定的属性；跳步或漏设属性，<code>ibv_modify_qp</code> 直接返回 EINVAL。</p>
+      <p class="lede">新建的 QP 什么都不能做。它必须按 RESET → INIT → RTR → RTS 逐步迁移，每一步只允许设置一组特定的属性；跳步或漏设属性，<code>ibv_modify_qp</code> 直接返回 EINVAL。（INIT = Initialized，RTR = Ready To Receive，RTS = Ready To Send。）</p>
     </div>
 
     <div class="inst">
@@ -707,7 +707,7 @@ section[id]{scroll-margin-top:74px}
     </div>
 
     <div class="prose" style="margin-top:24px">
-      <p>两个最容易踩的点：<strong>必须在进入 RTR 之前 post 好 recv WR</strong>，否则第一个包到达时接收队列为空，对端会收到 RNR NAK，报文原地等一会儿再重试；<strong>两端的 <code>path_mtu</code> 与 PSN 起点必须一致</strong>，一边 4096 一边 1024，报文会被对端当成超长帧直接丢弃。</p>
+      <p>两个最容易踩的点：<strong>必须在进入 RTR 之前 post 好 recv WR</strong>，否则第一个包到达时接收队列为空，对端会收到 RNR NAK（Receiver Not Ready，接收方未就绪的否定确认），报文原地等一会儿再重试；<strong>两端的 <code>path_mtu</code> 与 PSN 起点必须一致</strong>，一边 4096 一边 1024，报文会被对端当成超长帧直接丢弃。</p>
       <p>进入 RTS 之后，QP 才真正可用。此时属性里的 <code>timeout</code>、<code>retry_cnt</code>、<code>rnr_retry</code> 决定了它在不可靠网络里的韧性——默认值往往过于乐观。</p>
     </div>
   </div>
@@ -719,7 +719,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 05 · 服务类型</span>
       <h2>选哪种 QP：可靠连接不是唯一答案</h2>
-      <p class="lede">传输服务决定了这个 QP 有没有连接、丢包会不会重传、支持哪些操作。选错的代价要么是内存开销爆炸，要么是数据静默丢失。</p>
+      <p class="lede">传输服务决定了这个 QP 有没有连接、丢包会不会重传、支持哪些操作。选错的代价要么是内存开销爆炸，要么是数据静默丢失。（RC = Reliable Connection，UC = Unreliable Connection，UD = Unreliable Datagram，RD = Reliable Datagram，XRC = eXtended Reliable Connection，DC = Dynamic Connection。）</p>
     </div>
 
     <div class="tbl-wrap">
@@ -738,8 +738,8 @@ section[id]{scroll-margin-top:74px}
     <div class="result" id="trPanel" aria-live="polite" style="margin-top:14px"></div>
 
     <div class="prose" style="margin-top:24px">
-      <p>RC 的问题在于 <strong>QP 数量按平方增长</strong>：N 个节点、每节点 p 个进程要两两通信，就需要 N·p² 个 QP，每个 QP 都占网卡缓存与内存。UD 用一条 QP 发往任意目的（靠 DETH 头里的目的 QPN 寻址），代价是不保证送达、单个消息不能超过 PMTU，且接收端必须能从 GRH 里解析来源。</p>
-      <p>XRC 让多个进程共享一个接收 QP，DC 则把“建连”这件事交给硬件按需完成——发送时只写 DCT 号，不需要对端预先知道谁要来连。这两者都是为规模问题准备的补丁。</p>
+      <p>RC 的问题在于 <strong>QP 数量按平方增长</strong>：N 个节点、每节点 p 个进程要两两通信，就需要 N·p² 个 QP，每个 QP 都占网卡缓存与内存。UD 用一条 QP 发往任意目的（靠 DETH 头里的目的 QPN 寻址），代价是不保证送达、单个消息不能超过 PMTU（Path Maximum Transmission Unit，路径最大传输单元），且接收端必须能从 GRH 里解析来源。</p>
+      <p>XRC 让多个进程共享一个接收 QP，DC 则把“建连”这件事交给硬件按需完成——发送时只写 DCT（Dynamic Connection Target，动态连接目标号），不需要对端预先知道谁要来连。这两者都是为规模问题准备的补丁。</p>
     </div>
   </div>
 </section>
@@ -767,8 +767,8 @@ section[id]{scroll-margin-top:74px}
     </div>
 
     <div class="prose" style="margin-top:24px">
-      <p>第 2 步值得单独说：<strong>WQE 是写在你自己的内存里的</strong>，SQ 是应用与网卡共享的环形缓冲区，libibverbs 只是替你算好偏移量。所谓 doorbell，就是对网卡的一个映射到用户空间的寄存器做一次写，告诉它“环上有新条目了”。这就是 kernel bypass 的全部秘密：没有陷入内核，没有拷贝。</p>
-      <p>第 6 步是零拷贝的另一半：对端网卡拿着 BTH 里的 QPN 找到 QP 上下文，再用 RETH 里的 rkey 查翻译表，把数据直接 DMA 进你的缓冲区。整个过程中，对端操作系统和 CPU 都不知道这件事发生过。</p>
+      <p>第 2 步值得单独说：<strong>WQE（Work Queue Element，工作队列元素）是写在你自己的内存里的</strong>，SQ 是应用与网卡共享的环形缓冲区，libibverbs 只是替你算好偏移量。所谓 doorbell（门铃），就是对网卡的一个映射到用户空间的寄存器做一次写，告诉它“环上有新条目了”。这就是 kernel bypass 的全部秘密：没有陷入内核，没有拷贝。</p>
+      <p>第 6 步是零拷贝的另一半：对端网卡拿着 BTH（Base Transport Header，基础传输头）里的 QPN 找到 QP 上下文，再用 RETH（RDMA Extended Transport Header，RDMA 扩展传输头）里的 rkey 查翻译表，把数据直接 DMA 进你的缓冲区。整个过程中，对端操作系统和 CPU 都不知道这件事发生过。</p>
     </div>
   </div>
 </section>
@@ -779,7 +779,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 07 · 操作语义</span>
       <h2>四种操作，差在谁必须参与</h2>
-      <p class="lede">SEND 是对端 CPU 必须参与的双边操作；WRITE、READ、ATOMIC 是单边操作，对端只有网卡在工作。这张差别决定了你的程序要不要在对端跑线程。</p>
+      <p class="lede">SEND 是对端 CPU 必须参与的双边操作；WRITE、READ、ATOMIC 是单边操作，对端只有网卡在工作。这张差别决定了你的程序要不要在对端跑线程。（下文 WRITE_WITH_IMM 中的 IMM = Immediate，立即数。）</p>
     </div>
 
     <div class="inst">
@@ -822,7 +822,7 @@ section[id]{scroll-margin-top:74px}
     </div>
 
     <h3>BTH：12 个字节决定了报文去哪、是什么</h3>
-    <p class="prose" style="margin-top:8px">Base Transport Header 是所有 RDMA 报文的公共头。三个 32 位字，字段排布如下——点击任意字段。</p>
+    <p class="prose" style="margin-top:8px">BTH（Base Transport Header，基础传输头）是所有 RDMA 报文的公共头。三个 32 位字，字段排布如下——点击任意字段。</p>
 
     <div class="inst">
       <div class="scrollx">
@@ -834,6 +834,7 @@ section[id]{scroll-margin-top:74px}
     <h3>Opcode：高 3 位选服务，低 5 位选操作</h3>
     <div class="prose" style="margin-top:8px">
       <p>RC 的基址是 <code>0x00</code>，UC 是 <code>0x20</code>，RD 是 <code>0x40</code>，UD 是 <code>0x60</code>。同一个操作的 First/Middle/Last/Only 是相邻的几个码点——所以解析器只要看 <code>opcode &gt;&gt; 5</code> 就知道该用哪种传输服务。</p>
+      <p>下表"头"一列里：<b>AETH</b> = Acknowledgement Extended Transport Header（确认扩展头），<b>AtomicETH</b> = Atomic Extended Transport Header（原子扩展头），<b>DETH</b> = Datagram Extended Transport Header（数据报扩展头），<b>ImmDt</b> = Immediate Data（立即数头）。</p>
     </div>
 
     <div class="inst">
@@ -863,7 +864,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 09 · 分片</span>
       <h2>PMTU 决定一个小消息之外的一切</h2>
-      <p class="lede">超过 PMTU 的消息会被网卡切成首包、中间包、尾包，opcode 随之改变。PMTU 越大，头部开销越小，但延迟抖动也越大。自己算一遍。</p>
+      <p class="lede">超过 PMTU 的消息会被网卡切成首包、中间包、尾包，opcode 随之改变。PMTU（Path Maximum Transmission Unit，路径最大传输单元）越大，头部开销越小，但延迟抖动也越大。自己算一遍。</p>
     </div>
 
     <div class="inst">
@@ -902,7 +903,7 @@ section[id]{scroll-margin-top:74px}
         <div><b id="outEff">—</b><span>有效载荷占比</span></div>
       </div>
       <div class="pkts" id="pktStrip"></div>
-      <p class="inst-note" style="margin-top:12px">首包额外带 16 字节 RETH（远端地址 + rkey + 长度）；带立即数的尾包再加 4 字节 ImmDt。PMTU 4096 时头部开销正好 1.49%，与实测线速损耗吻合。</p>
+      <p class="inst-note" style="margin-top:12px">首包额外带 16 字节 RETH（RDMA Extended Transport Header，远端地址 + rkey + 长度）；带立即数的尾包再加 4 字节 ImmDt（Immediate Data，立即数头）。PMTU 4096 时头部开销正好 1.49%，与实测线速损耗吻合。</p>
     </div>
   </div>
 </section>
@@ -913,7 +914,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 10 · 可靠性</span>
       <h2>PSN、NAK 与 go-back-N</h2>
-      <p class="lede">可靠连接不是魔法：每个报文有 24 位序号，接收端发现跳号就回 NAK，发送端从缺的那个序号起重发后面全部。走一遍丢包现场。</p>
+      <p class="lede">可靠连接不是魔法：每个报文有 24 位 PSN（Packet Sequence Number，包序号），接收端发现跳号就回 NAK（Negative Acknowledgement，否定确认），发送端从缺的那个序号起重发后面全部。走一遍丢包现场。</p>
     </div>
 
     <div class="inst">
@@ -932,8 +933,8 @@ section[id]{scroll-margin-top:74px}
       <table>
         <thead><tr><th class="num">AETH syndrome</th><th>含义</th><th>触发场景</th></tr></thead>
         <tbody>
-          <tr><td class="num">0x00</td><td>ACK</td><td>正常确认，MSN 表示已收到的最新消息序号</td></tr>
-          <tr><td class="num">0x01</td><td>RNR NAK</td><td>接收队列没有可用的 RECV WR，等 min_rnr_timer 后重试</td></tr>
+          <tr><td class="num">0x00</td><td>ACK（Acknowledgement，确认）</td><td>正常确认，MSN（Message Sequence Number，消息序号）表示已收到的最新消息序号</td></tr>
+          <tr><td class="num">0x01</td><td>RNR NAK（Receiver Not Ready，接收方未就绪）</td><td>接收队列没有可用的 RECV WR，等 min_rnr_timer 后重试</td></tr>
           <tr><td class="num">0x60</td><td>无效请求 / 序号错误</td><td>PSN 跳号、opcode 与 QP 状态不符</td></tr>
           <tr><td class="num">0x61</td><td>远端访问错误</td><td>rkey 无效、权限不足、地址越界</td></tr>
           <tr><td class="num">0x62</td><td>远端无效 RD 请求</td><td>不支持的 RDMA READ 组合</td></tr>
@@ -945,7 +946,7 @@ section[id]{scroll-margin-top:74px}
 
     <div class="prose" style="margin-top:24px">
       <p>超时重传和 NAK 重传是两套机制。<code>timeout</code> 字段是 4.096 µs × 2<sup>n</sup> 的本地确认超时，<code>retry_cnt</code> 控制超时重试次数，<code>rnr_retry</code> 控制收到 RNR 后的重试次数（7 表示无限）。三者都设得太小，链路稍有抖动 QP 就进 ERROR，所有未完成的 WR 变成 <code>IBV_WC_WR_FLUSH_ERR</code>。</p>
-      <p>要注意 RC 的回退是 <strong>go-back-N</strong> 而不是选择重传：一个包丢了，它之后的包即使已经到达也会被丢弃并重发。这也是为什么在高丢包率环境里，PMTU 太小会显著放大重传流量。</p>
+      <p>要注意 RC 的回退是 <strong>go-back-N（回退 N 帧）</strong>而不是选择重传：一个包丢了，它之后的包即使已经到达也会被丢弃并重发。这也是为什么在高丢包率环境里，PMTU 太小会显著放大重传流量。</p>
     </div>
   </div>
 </section>
@@ -956,7 +957,7 @@ section[id]{scroll-margin-top:74px}
     <div class="sec-head">
       <span class="eyebrow">模块 11 · 拥塞</span>
       <h2>无损以太不是免费的</h2>
-      <p class="lede">InfiniBand 用链路级信用保证不丢包；RoCEv2 跑在以太网上，只能靠 PFC 造出“无损”，再用 ECN + DCQCN 免得这张无损网在拥塞时变成一张堵死的网。</p>
+      <p class="lede">InfiniBand 用链路级信用保证不丢包；RoCEv2 跑在以太网上，只能靠 PFC（Priority Flow Control，优先级流控）造出“无损”，再用 ECN（Explicit Congestion Notification，显式拥塞通知）+ DCQCN（Data Center Quantized Congestion Notification，数据中心量化拥塞通知）免得这张无损网在拥塞时变成一张堵死的网。</p>
     </div>
 
     <div class="inst">
@@ -979,7 +980,7 @@ section[id]{scroll-margin-top:74px}
 
     <div class="prose" style="margin-top:24px">
       <p><strong>PFC</strong>（802.1Qbb）按优先级发 PAUSE 帧，让上游暂停发送，把“丢包”换成“排队”。它有效，但很脆：一台交换机暂停上游，上游的缓冲区开始堆积，可能再去暂停它的上游，形成反压链；配置成环时甚至会出现 PFC 死锁。所以生产环境通常把 PFC 限制在一个专用优先级上，并且只对 RoCE 流量开启。</p>
-      <p><strong>ECN + DCQCN</strong> 是端到端的闭环：交换机在队列超过 Kmin 后按概率给报文打 CE 标记；接收端网卡看到 CE，生成 CNP 回发给发送端；发送端按 α 比例降速，没有 CNP 时再按定时器慢慢升回来。α 随 CNP 密度增长，避免对单个标记反应过度。</p>
+      <p><strong>ECN + DCQCN</strong> 是端到端的闭环：交换机在队列超过 Kmin 后按概率给报文打 CE（Congestion Experienced，已拥塞）标记；接收端网卡看到 CE，生成 CNP（Congestion Notification Packet，拥塞通知报文）回发给发送端；发送端按 α 比例降速，没有 CNP 时再按定时器慢慢升回来。α 随 CNP 密度增长，避免对单个标记反应过度。</p>
       <p>还有一条更根本的差别：IB 的流控是<strong>逐跳信用制</strong>，接收方有多少缓冲就发多少信用，永远不会溢出；RoCEv2 的 PFC 是<strong>逐跳暂停</strong>，只能刹车，不能预约。这就是为什么 RoCE 集群的网络配置比 IB 复杂得多。</p>
     </div>
   </div>
@@ -998,10 +999,10 @@ section[id]{scroll-margin-top:74px}
       <table>
         <thead><tr><th>消息规模</th><th>主导因素</th><th>观察到的现象</th><th>该怎么做</th></tr></thead>
         <tbody>
-          <tr><td class="num">≤ 256 B</td><td>延迟 + 消息率（Mpps）</td><td>带宽远低于线速，CPU 单核打满</td><td>用 inline 发送、减少 WR 数量、多 QP 分散到多核</td></tr>
+          <tr><td class="num">≤ 256 B</td><td>延迟 + 消息率（Mpps，Million packets per second，百万包/秒）</td><td>带宽远低于线速，CPU 单核打满</td><td>用 inline 发送、减少 WR 数量、多 QP 分散到多核</td></tr>
           <tr><td class="num">1 – 4 KB</td><td>延迟与每包开销</td><td>刚好一个 PMTU，效率 98.5%</td><td>确认 path_mtu=4096；小消息考虑合并</td></tr>
           <tr><td class="num">64 KB</td><td>在途请求数（window）</td><td>单 QP 跑不满链路</td><td>增加 outstanding WR / max_rd_atomic，或多 QP</td></tr>
-          <tr><td class="num">≥ 1 MB</td><td>PCIe 与内存带宽</td><td>多流并发后总带宽不再增长</td><td>看 PCIe 代际与通道数、NUMA 亲和、DMA 写合并</td></tr>
+          <tr><td class="num">≥ 1 MB</td><td>PCIe（Peripheral Component Interconnect Express，外设互联总线）与内存带宽</td><td>多流并发后总带宽不再增长</td><td>看 PCIe 代际与通道数、NUMA（Non-Uniform Memory Access，非统一内存访问）亲和、DMA 写合并</td></tr>
         </tbody>
       </table>
     </div>
@@ -1009,7 +1010,7 @@ section[id]{scroll-margin-top:74px}
     <h3>调优清单</h3>
     <div class="prose">
       <ul style="margin:0;padding-left:20px;display:flex;flex-direction:column;gap:7px">
-        <li><strong>预注册内存</strong>，把 <code>ibv_reg_mr</code> 移出热路径；确需动态缓冲区就用内存窗口或 ODP。</li>
+        <li><strong>预注册内存</strong>，把 <code>ibv_reg_mr</code> 移出热路径；确需动态缓冲区就用内存窗口或 ODP（On-Demand Paging，按需分页）。</li>
         <li><strong>选择性 signaling</strong>：只给需要确认的 WR 设 <code>IBV_SEND_SIGNALED</code>，其余靠 CQ 里的批量完成，减少 CQE 与中断。</li>
         <li><strong>批量 poll</strong>：<code>ibv_poll_cq</code> 一次取 16–32 条；专用轮询核绑核，关掉该核的 C-state 与中断。</li>
         <li><strong>PMTU 拉到 4096</strong>，并确认交换机 MTU 与两端一致；RoCEv2 常配 9000 字节巨型帧。</li>
@@ -1023,10 +1024,11 @@ section[id]{scroll-margin-top:74px}
       <table>
         <thead><tr><th>症状</th><th>先查什么</th></tr></thead>
         <tbody>
-          <tr><td>CQE 状态是 <code>IBV_WC_WR_FLUSH_ERR</code></td><td>QP 已进 ERROR：通常是重试耗尽，去看对端为什么没回 ACK</td></tr>
-          <tr><td><code>IBV_WC_REM_ACCESS_ERR</code></td><td>rkey 不匹配、权限不足、远端地址越界，或两端不在同一 PD</td></tr>
+          <tr><td>CQE（Completion Queue Entry，完成队列条目）状态是 <code>IBV_WC_WR_FLUSH_ERR</code></td><td>QP 已进 ERROR：通常是重试耗尽，去看对端为什么没回 ACK</td></tr>
+          <tr><td><code>IBV_WC_REM_ACCESS_ERR</code></td><td>rkey 不匹配、权限不足、远端地址越界，或两端不在同一 PD（Protection Domain，保护域）</td></tr>
           <tr><td>吞吐只有预期的一半</td><td>单 QP 窗口不足、PMTU 被协商成 1024、PCIe 不是 x16、跨 NUMA</td></tr>
           <tr><td>延迟周期性抖动</td><td>中断合并、CPU 降频、C-state、其他进程抢核</td></tr>
+          <tr><td>偶发 RNR 重传</td><td>接收端 post_recv 不及时，或 SRQ（Shared Receive Queue，共享接收队列）深度不够</td></tr>
           <tr><td>偶发 RNR 重传</td><td>接收端 post_recv 不及时，或 SRQ 深度不够</td></tr>
         </tbody>
       </table>
@@ -1154,7 +1156,7 @@ if (wc.status != IBV_WC_SUCCESS) {
     <div class="sec-head">
       <span class="eyebrow">模块 14 · 端到端</span>
       <h2>用 WRITE_WITH_IMM 拼一条生产者/消费者队列</h2>
-      <p class="lede">单边写入负责搬数据，立即数负责通知。生产者只写自己的内存加一次 doorbell；消费者等的是网卡投递的立即数，而不是去轮询共享内存。整个模型只有一个环缓冲区和一个计数器。</p>
+      <p class="lede">单边写入负责搬数据，立即数负责通知。生产者只写自己的内存加一次 doorbell；消费者等的是网卡投递的立即数，而不是去轮询共享内存。整个模型只有一个环缓冲区和一个计数器。（IMM = Immediate，立即数；CQE = Completion Queue Entry，完成队列条目。）</p>
     </div>
 
     <div class="inst">
@@ -1170,7 +1172,7 @@ if (wc.status != IBV_WC_SUCCESS) {
         <div class="rb-lane">
           <div class="rb-lane-h"><span class="pill a">节点 A</span> 生产者</div>
           <div class="rb-lane-b">
-            <p class="rb-p">A 侧只持有一块本地 MR 和一个 &lt;remote_addr, rkey&gt; 对。每次生产：</p>
+            <p class="rb-p">A 侧只持有一块本地 MR（Memory Region，内存区域）和一个 &lt;remote_addr, rkey&gt; 对。每次生产：</p>
             <ol class="rb-steps" id="prodSteps">
               <li>写 64 字节记录进自己的发送缓冲</li>
               <li>构造 WQE，opcode = WRITE_WITH_IMM</li>
@@ -1201,7 +1203,7 @@ if (wc.status != IBV_WC_SUCCESS) {
         <div class="rb-lane">
           <div class="rb-lane-h"><span class="pill b">节点 B</span> 消费者</div>
           <div class="rb-lane-b">
-            <p class="rb-p">B 侧从没 post 过 recv WR。它只在 CQ 上等，拿到的 CQE 带 <code>IBV_WC_RECV_RDMA_WITH_IMM</code> 与 imm_data：</p>
+            <p class="rb-p">B 侧从没 post 过 recv WR。它只在 CQ 上等，拿到的 CQE 带 <code>IBV_WC_RECV_RDMA_WITH_IMM</code> 与 imm_data（立即数）：</p>
             <div class="cq" id="cq" aria-label="完成队列">
               <div class="cq-empty" id="cqEmpty">CQ 为空 · polling</div>
             </div>
@@ -1287,6 +1289,7 @@ ibv_post_send(qp, &amp;w, &amp;bad);</pre>
     </div>
 
     <p class="cap" style="margin-top:20px">参考资料：InfiniBand Architecture Specification Vol.1（传输层 BTH/AETH/RETH、QP 状态机、opcode 表）；Linux 内核 <code>include/rdma/ib_verbs.h</code> 与 rdma-core 手册页（ibv_reg_mr、ibv_modify_qp）；RoCEv2 规范（UDP 4791、无损以太与 DCQCN）。数值均为量级示意，具体以你的网卡与固件为准。</p>
+    <p class="cap" style="margin-top:8px">缩写速查：RDMA = Remote Direct Memory Access（远程直接内存访问）；IB = InfiniBand（无限带宽）；RoCE = RDMA over Converged Ethernet（融合以太网上的 RDMA）；HCA = Host Channel Adapter（主机通道适配器）；QP = Queue Pair（队列对）；CQ = Completion Queue（完成队列）；WR = Work Request（工作请求）；WQE = Work Queue Element（工作队列元素）；PSN = Packet Sequence Number（包序号）；PMTU = Path Maximum Transmission Unit（路径最大传输单元）；PFC = Priority Flow Control（优先级流控）；ECN = Explicit Congestion Notification（显式拥塞通知）；DCQCN = Data Center Quantized Congestion Notification（数据中心量化拥塞通知）。</p>
   </div>
 </section>
 
